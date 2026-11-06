@@ -11,9 +11,9 @@ import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import type * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import { expect, it, vi } from "vite-plus/test";
-import { page } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 import "~/index.css";
-import { RoadmapEditor } from "./Board";
+import { ProjectNoteEditor } from "./Board";
 import { AppRoot } from "~/AppRoot";
 import { getRouter } from "~/router";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
@@ -72,6 +72,7 @@ it("switches views, retains task conversations and launches another in the same 
     board: {
       ...emptyMatteBoard,
       roadmap: "Preparare il primo rilascio",
+      context: "Rispettare i dati locali",
       projectThreadId: roadmap.id,
       tasks: [
         task,
@@ -128,6 +129,26 @@ it("switches views, retains task conversations and launches another in the same 
     .element(page.getByText("Completa la ricerca nella lista", { exact: false }))
     .toBeVisible();
   const button = (name: string) => page.getByRole("button", { name, exact: true });
+  await button("Contesto").click();
+  const projectContext = page.getByRole("textbox", { name: "Contesto del progetto" });
+  await expect.element(projectContext).toHaveValue("Rispettare i dati locali");
+  const input = document.querySelector<HTMLInputElement>('input[aria-label="File di contesto"]')!;
+  await userEvent.upload(
+    input,
+    new File(["Usare worktree separati"], "decisioni.md", { type: "text/markdown" }),
+  );
+  const combined = "Rispettare i dati locali\n\nUsare worktree separati";
+  await expect.element(projectContext).toHaveValue(combined);
+  await button("Roadmap").click();
+  await expect
+    .element(page.getByRole("textbox", { name: "Roadmap" }))
+    .toHaveValue("Preparare il primo rilascio");
+  await button("Contesto").click();
+  await expect.element(projectContext).toHaveValue(combined);
+  expect(saved.board.context).toBe("Rispettare i dati locali");
+  await button("Salva").click();
+  await vi.waitFor(() => expect(saved.board.context).toBe(combined));
+  expect(saved.board.roadmap).toBe("Preparare il primo rilascio");
   const sidebarToggle = button("Toggle main sidebar");
   const composer = page.getByTestId("composer-editor");
   await composer.fill("Confronta le priorità");
@@ -213,16 +234,17 @@ it("switches views, retains task conversations and launches another in the same 
 it("preserves a roadmap draft across unrelated revisions and resolves overlapping edits", async () => {
   const initial = { ...emptyMatteBoard, roadmap: "Prima bozza", context: "Contesto iniziale" };
   const save = vi.fn(async () => true);
-  const props = { close: () => {}, save, disabled: false };
-  await using screen = await render(<RoadmapEditor {...props} board={initial} revision={1} />);
+  const props = { close: () => {}, save, disabled: false, field: "roadmap" as const, active: true };
+  await using screen = await render(<ProjectNoteEditor {...props} board={initial} revision={1} />);
   const roadmap = page.getByRole("textbox", { name: "Roadmap" });
   await roadmap.fill("La mia proposta");
   const latest = { ...initial, context: "Nuovo contesto" };
-  await screen.rerender(<RoadmapEditor {...props} board={latest} revision={2} />);
+  await screen.rerender(<ProjectNoteEditor {...props} board={latest} revision={2} />);
   await page.getByRole("button", { name: "Salva", exact: true }).click();
   expect(save.mock.calls[0]).toEqual([{ ...latest, roadmap: "La mia proposta" }, 2]);
+  await roadmap.fill("La mia proposta");
   const remote = { ...latest, roadmap: "Proposta di un collega" };
-  await screen.rerender(<RoadmapEditor {...props} board={remote} revision={3} />);
+  await screen.rerender(<ProjectNoteEditor {...props} board={remote} revision={3} />);
   await expect.element(page.getByRole("button", { name: "Salva", exact: true })).toBeDisabled();
   await expect.element(roadmap).toHaveValue("La mia proposta");
   await page.getByRole("button", { name: "Mantieni la mia modifica" }).click();

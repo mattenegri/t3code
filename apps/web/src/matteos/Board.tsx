@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useId, useRef, useState } from "react";
+import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import { randomUUID } from "../lib/utils";
 import { ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon, PlusIcon } from "lucide-react";
 import type { MatteBoard, MatteTask, MatteTaskStatus, ThreadId } from "@t3tools/contracts";
@@ -171,7 +172,7 @@ function useTextEdit(saved: string) {
           ? null
           : { base: !draft || draft.value === saved ? saved : draft.base, value: next },
       ),
-    useSaved: () => setDraft(null),
+    discardDraft: () => setDraft(null),
     keepDraft: () => setDraft({ base: saved, value }),
   };
 }
@@ -185,7 +186,7 @@ function EditConflict({ field, label }: { field: ReturnType<typeof useTextEdit>;
         {field.saved || "(vuoto)"}
       </p>
       <div className="flex flex-wrap gap-2">
-        <Button type="button" size="sm" variant="outline" onClick={field.useSaved}>
+        <Button type="button" size="sm" variant="outline" onClick={field.discardDraft}>
           Usa la versione salvata
         </Button>
         <Button type="button" size="sm" variant="secondary" onClick={field.keepDraft}>
@@ -196,59 +197,122 @@ function EditConflict({ field, label }: { field: ReturnType<typeof useTextEdit>;
   );
 }
 
-export function RoadmapEditor({
+export function ProjectNoteEditor({
   board,
   revision,
   save,
   disabled,
   close,
-}: PanelProps & { close: () => void }) {
-  const roadmap = useTextEdit(board.roadmap);
-  const context = useTextEdit(board.context);
-  const blocked = disabled || roadmap.conflict || context.conflict;
+  field,
+  active,
+}: PanelProps & { field: "roadmap" | "context"; active: boolean; close: () => void }) {
+  const edit = useTextEdit(board[field]);
+  const [reading, setReading] = useState(false);
+  const [error, setError] = useState("");
+  const input = useRef<HTMLInputElement>(null);
+  const description = useId();
+  const context = field === "context";
+  const locked = disabled || reading;
+  const blocked = locked || edit.conflict;
+  const leave = () => {
+    edit.discardDraft();
+    setError("");
+    close();
+  };
+  const appendFile = async (file: File) => {
+    const limit = "Il contesto può contenere al massimo 16.000 caratteri.";
+    if (file.size > 64000) {
+      setError(limit);
+      return;
+    }
+    setError("");
+    setReading(true);
+    const result = await settlePromise(() => file.text());
+    setReading(false);
+    if (result._tag === "Failure") {
+      setError("Impossibile leggere il file.");
+      return;
+    }
+    const text = result.value;
+    if (text.includes("\0")) {
+      setError("Scegli un file di testo o Markdown.");
+      return;
+    }
+    if (!text.trim()) return;
+    const combined = edit.value ? edit.value + "\n\n" + text : text;
+    if (combined.length > 16000) setError(limit);
+    else edit.change(combined);
+  };
+  if (!active) return null;
   return (
     <form
-      className="grid content-start gap-4"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        if (
-          !blocked &&
-          (await save({ ...board, roadmap: roadmap.value, context: context.value }, revision))
-        )
-          close();
+      className="grid content-start gap-3"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        if (!blocked && (await save({ ...board, [field]: edit.value }, revision))) leave();
       }}
     >
       <label className="grid gap-1.5 text-sm font-medium">
-        Roadmap
+        {context ? "Contesto del progetto" : "Roadmap"}
         <Textarea
-          rows={5}
-          readOnly={disabled}
+          rows={7}
           maxLength={16000}
-          value={roadmap.value}
-          onChange={(e) => roadmap.change(e.target.value)}
-          placeholder="Obiettivi e prossimi passi"
+          readOnly={locked}
+          value={edit.value}
+          aria-describedby={context ? description : undefined}
+          onChange={(event) => edit.change(event.target.value)}
+          placeholder={
+            context
+              ? "Scopo del progetto, decisioni e vincoli da rispettare"
+              : "Obiettivi e prossimi passi"
+          }
         />
       </label>
-      <EditConflict field={roadmap} label="Il testo della roadmap" />
-      <label className="grid gap-1.5 text-sm font-medium">
-        Contesto del progetto
-        <Textarea
-          rows={5}
-          readOnly={disabled}
-          maxLength={16000}
-          value={context.value}
-          onChange={(e) => context.change(e.target.value)}
-          placeholder="Decisioni, materiali e vincoli per gli agenti"
-        />
-      </label>
-      <EditConflict field={context} label="Il contesto" />
-      <div className="flex gap-2">
+      {context && (
+        <p id={description} className="text-xs text-muted-foreground">
+          La chat di progetto e le chat dei task ricevono il contesto salvato.
+        </p>
+      )}
+      <EditConflict field={edit} label={context ? "Il contesto" : "Il testo della roadmap"} />
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
         <Button type="submit" disabled={blocked}>
           Salva
         </Button>
-        <Button type="button" variant="ghost" onClick={close}>
-          Chiudi
+        <Button type="button" variant="ghost" onClick={leave} disabled={reading}>
+          Annulla
         </Button>
+        {context && (
+          <>
+            <input
+              ref={input}
+              hidden
+              type="file"
+              aria-label="File di contesto"
+              accept=".md,.markdown,.txt,text/plain,text/markdown"
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0];
+                event.currentTarget.value = "";
+                if (file && !locked) void appendFile(file);
+              }}
+            />
+            <div className="ml-auto">
+              <Button
+                type="button"
+                variant="ghost-muted"
+                size="sm"
+                disabled={locked}
+                onClick={() => input.current?.click()}
+              >
+                Aggiungi da file
+              </Button>
+            </div>
+          </>
+        )}
       </div>
     </form>
   );

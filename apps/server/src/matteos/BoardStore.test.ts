@@ -56,9 +56,11 @@ it.effect(
       assert.deepEqual(yield* otherClient.read(projectId), { revision: 1, board });
       const firstRun = RunId.make("first");
       const projectContext = yield* store.contextFor(projectId, projectChat, firstRun);
+      assert.include(projectContext, "Desktop first");
       assert.include(projectContext, "Second milestone");
       for (const threadId of [codingChat, reviewChat]) {
         const text = yield* store.contextFor(projectId, threadId, firstRun);
+        assert.include(text, "Desktop first");
         assert.include(text, "Ship a prototype");
         assert.include(text, "Isolate test data");
         assert.notInclude(text, "Second milestone");
@@ -152,6 +154,7 @@ it.effect("reopens the saved board through a fresh SQLite connection", () =>
         revision: 0,
         board: {
           ...emptyMatteBoard,
+          context: "Decisioni condivise",
           roadmap: "Consegna",
           projectThreadId: ThreadId.make("planning"),
         },

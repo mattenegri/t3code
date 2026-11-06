@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 import {
   ArrowLeftIcon,
   Columns3Icon,
+  BookOpenIcon,
   ListIcon,
   MapIcon,
   PanelRightCloseIcon,
@@ -23,7 +24,7 @@ import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { SidebarInset } from "../components/ui/sidebar";
 import { Button } from "../components/ui/button";
 import { Conversation, type ConversationDraft } from "./Conversation";
-import { RoadmapEditor, TaskCollection, TaskDetail, type Save } from "./Board";
+import { ProjectNoteEditor, TaskCollection, TaskDetail, type Save } from "./Board";
 import { readBoard, saveBoard } from "./atoms";
 import { Choice } from "./controls";
 
@@ -157,7 +158,7 @@ function ProjectBoard({
     inFlight = useRef(false);
   const [error, setError] = useState("");
   const [list, setList] = useState(false);
-  const [section, setSection] = useState<"tasks" | "roadmap">("tasks");
+  const [section, setSection] = useState<"tasks" | "roadmap" | "context">("tasks");
   const [taskId, setTaskId] = useState<string | null>(null);
   const [drafts] = useState(() => new Map<string | null, ConversationDraft>());
   const [chat, setChat] = useState<{
@@ -280,40 +281,50 @@ function ProjectBoard({
                   Lista
                 </Button>
               </div>
-              <Button
-                size="sm"
-                aria-pressed={section === "roadmap"}
-                variant={section === "roadmap" ? "secondary" : "ghost-muted"}
-                onClick={() => {
-                  setSection(section === "roadmap" ? "tasks" : "roadmap");
-                  setTaskId(null);
-                }}
-              >
-                <MapIcon />
-                Roadmap
-              </Button>
+              <div className="flex items-center gap-1">
+                {(["roadmap", "context"] as const).map((field) => (
+                  <Button
+                    key={field}
+                    size="sm"
+                    aria-pressed={section === field}
+                    variant={section === field ? "secondary" : "ghost-muted"}
+                    onClick={() => setSection(section === field ? "tasks" : field)}
+                  >
+                    {field === "roadmap" ? <MapIcon /> : <BookOpenIcon />}
+                    {field === "roadmap" ? "Roadmap" : "Contesto"}
+                  </Button>
+                ))}
+              </div>
             </div>
           )}
-          {section === "roadmap" ? (
-            <RoadmapEditor {...props} close={() => setSection("tasks")} />
-          ) : selected ? (
-            <TaskDetail
-              key={selected.id}
+          {(["roadmap", "context"] as const).map((field) => (
+            <ProjectNoteEditor
+              key={field}
               {...props}
-              task={shownTasks.find((t) => t.id === selected.id) ?? selected}
-              titles={titles}
-              close={() => setTaskId(null)}
-              openChat={(id) => switchChat(selected.id, id, false)}
-              newChat={() => switchChat(selected.id, null, true)}
+              field={field}
+              active={section === field}
+              close={() => setSection((current) => (current === field ? "tasks" : current))}
             />
-          ) : (
-            <TaskCollection
-              {...props}
-              board={{ ...board, tasks: shownTasks }}
-              openTask={setTaskId}
-              list={list}
-            />
-          )}
+          ))}
+          {section === "tasks" &&
+            (selected ? (
+              <TaskDetail
+                key={selected.id}
+                {...props}
+                task={shownTasks.find((t) => t.id === selected.id) ?? selected}
+                titles={titles}
+                close={() => setTaskId(null)}
+                openChat={(id) => switchChat(selected.id, id, false)}
+                newChat={() => switchChat(selected.id, null, true)}
+              />
+            ) : (
+              <TaskCollection
+                {...props}
+                board={{ ...board, tasks: shownTasks }}
+                openTask={setTaskId}
+                list={list}
+              />
+            ))}
         </section>
 
         <aside
