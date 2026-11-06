@@ -397,6 +397,8 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
+      /** The host supplies navigation, including a link to the full thread. */
+      hostProvidesHeader?: boolean;
       /** A side chat in its parent's right panel; the parent keeps the keyboard and workspace UI. */
       embedded?: SideChatParentPanel;
       routeKind: "server";
@@ -3294,6 +3296,8 @@ export default function ChatView(props: ChatViewProps) {
     />
   );
   const threadPanelHeaderControl = <ThreadPanelHeaderControl {...panelToggleControlProps} />;
+  const hostProvidesHeader =
+    routeKind === "server" && props.hostProvidesHeader && !rightPanelPresent;
   const panelLayoutControls = (
     <WorkspaceTitlebarControls
       showMaximizeControl={!shouldUsePlanSidebarSheet}
@@ -3333,7 +3337,7 @@ export default function ChatView(props: ChatViewProps) {
         data-chat-column
         inert={rightPanelMaximized}
       >
-        {embedded ? null : (
+        {embedded || hostProvidesHeader ? null : (
           <header
             ref={threadPanelPopoverAnchorRef}
             data-chat-header

@@ -1122,6 +1122,16 @@ it.effect.each(["stable", "upstream/release"])(
         yield* Deferred.await(setupStarted);
         const projection = yield* threads.getThreadProjection(launched.threadId);
         assert.equal(projection.thread.worktreePath, worktreePath);
+        const followUp = yield* launches.launch(
+          launchInput({
+            command: "command:launch:task-review",
+            thread: "thread:launch:task-review",
+            workspace: { type: "existing_worktree", worktreePath, branch: "feature" },
+          }),
+        );
+        assert.equal(followUp.projection.thread.worktreePath, projection.thread.worktreePath);
+        assert.equal(followUp.projection.thread.branch, projection.thread.branch);
+        assert.notEqual(followUp.threadId, launched.threadId);
         assert.equal(
           (yield* command(worktreePath, ["rev-parse", "HEAD"])).stdout.trim(),
           remoteHead,

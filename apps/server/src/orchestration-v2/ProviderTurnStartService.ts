@@ -24,6 +24,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
+import * as MatteBoards from "../matteos/BoardStore.ts";
 
 import * as ServerConfig from "../config.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
@@ -148,6 +149,7 @@ export const layer: Layer.Layer<
 > = Layer.effect(
   ProviderTurnStartServiceV2,
   Effect.gen(function* () {
+    const matteBoards = yield* MatteBoards.BoardContext;
     const eventSink = yield* EventSink.EventSinkV2;
     const turnAnalytics = yield* ProviderUsageAnalytics.ProviderTurnAnalytics;
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
@@ -837,10 +839,29 @@ export const layer: Layer.Layer<
       });
       let effectiveHandoffs = handoffs;
       let resumeFellBack = false;
-      const userText = projectComposerContextForProvider({
+      const composedText = projectComposerContextForProvider({
         text: message.text,
         records: message.context?.records ?? [],
       });
+      // Provider commands need the leading command token intact; absolute file paths are ordinary prompts.
+      const commandPrompt = /^\/[\w.:-]+(?:\s|$)/u.test(message.text.trimStart());
+      const contextResult = yield* Effect.result(
+        commandPrompt
+          ? Effect.succeed(null)
+          : matteBoards.contextFor(projection.thread.projectId, projection.thread.id, run.id),
+      );
+      if (contextResult._tag === "Failure") {
+        if (input.willRetry) return yield* contextResult.failure;
+        yield* settleStartFailure({
+          signal: "board-context-failure",
+          title: "Impossibile caricare il contesto della roadmap",
+          error: contextResult.failure,
+        });
+        return;
+      }
+      const userText = contextResult.success
+        ? contextResult.success + "\n\n" + composedText
+        : composedText;
       // Codex and Claude parse /goal from the prompt, so it goes verbatim and history waits a turn.
       const goalDriver = session.driver === "codex" || session.driver === "claudeAgent";
       const goalCommand = goalDriver && parseGoalCommand(message) !== null;

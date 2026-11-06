@@ -41,6 +41,7 @@ artifacts/mobile-behavior/
 .github/pr-assets/
 native/**/target/
 node_modules/
+/.matteos-tools/
 .alchemy/
 *.log
 .env*

@@ -183,6 +183,8 @@ function run(threadId: ThreadId, id: RunId, ordinal: number, userMessageId: stri
 }
 
 export interface FakeThread {
+  readonly branch?: string;
+  readonly worktreePath?: string;
   /** Makes this a side chat of that thread. */
   readonly sideChatOf?: ThreadId;
   readonly id: ThreadId;
@@ -224,8 +226,8 @@ function shellOf(thread: FakeThread): OrchestrationV2ThreadShell {
     modelSelection: MODEL,
     runtimeMode: "full-access",
     interactionMode: "default",
-    branch: "main",
-    worktreePath: null,
+    branch: thread.branch ?? "main",
+    worktreePath: thread.worktreePath ?? null,
     activeProviderThreadId: null,
     lineage: {
       rootThreadId: thread.sideChatOf ?? thread.id,
@@ -256,7 +258,7 @@ function shellOf(thread: FakeThread): OrchestrationV2ThreadShell {
   };
 }
 
-function projectionOf(thread: FakeThread): OrchestrationV2ThreadProjection {
+export function projectionOf(thread: FakeThread): OrchestrationV2ThreadProjection {
   const shell = shellOf(thread);
   const visibleTurnItems: OrchestrationV2ProjectedTurnItem[] = thread.items.map(
     (item, position) => ({
@@ -433,7 +435,12 @@ const encodedDescriptor = Schema.encodeSync(ExecutionEnvironmentDescriptor)(
 );
 
 /** Serves the environment's HTTP API and these threads until disposed. */
-export function installFakeEnvironment(fixtures: ReadonlyArray<FakeThread>): Disposable {
+export function installFakeEnvironment(
+  fixtures: ReadonlyArray<FakeThread>,
+  overrides: typeof handlers = {},
+): Disposable {
+  const previous = Object.fromEntries(Object.keys(overrides).map((key) => [key, handlers[key]]));
+  Object.assign(handlers, overrides);
   threads = fixtures;
   globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
@@ -455,6 +462,10 @@ export function installFakeEnvironment(fixtures: ReadonlyArray<FakeThread>): Dis
   return {
     [Symbol.dispose]: () => {
       globalThis.fetch = realFetch;
+      for (const [key, handler] of Object.entries(previous)) {
+        if (handler) handlers[key] = handler;
+        else delete handlers[key];
+      }
       threads = [];
     },
   };

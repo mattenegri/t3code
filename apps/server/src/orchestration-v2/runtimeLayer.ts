@@ -46,6 +46,7 @@ import * as ProviderRuntimeRecoveryService from "./ProviderRuntimeRecoveryServic
 import * as ProviderSwitchService from "./ProviderSwitchService.ts";
 import * as ProviderTurnControlService from "./ProviderTurnControlService.ts";
 import * as ProviderTurnStartService from "./ProviderTurnStartService.ts";
+import * as MatteBoards from "../matteos/BoardStore.ts";
 import * as RunExecutionService from "./RunExecutionService.ts";
 import * as RunFinalizationService from "./RunFinalizationService.ts";
 import * as ResourceCleanupService from "./ResourceCleanupService.ts";
@@ -163,6 +164,7 @@ const layerRunExecutionServiceProvided = RunExecutionService.layer.pipe(
 );
 
 const layerProviderTurnStartServiceProvided = ProviderTurnStartService.layer.pipe(
+  Layer.provide(MatteBoards.contextLayer),
   Layer.provide(
     Layer.mergeAll(
       layerContextHandoffServiceProvided,

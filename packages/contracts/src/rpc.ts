@@ -34,6 +34,7 @@ import {
   ChatGptHandoffState,
 } from "./providerSetup.ts";
 import * as Schema from "effect/Schema";
+import { MatteBoardRead, MatteBoardWrite, MatteBoardSnapshot } from "./matteBoard.ts";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
@@ -415,6 +416,8 @@ export const WS_METHODS = {
   projectsWriteFile: "projects.writeFile",
   projectsMutate: "projects.mutate",
   projectsEnsureScratch: "projects.ensureScratch",
+  matteBoardRead: "matteos.readBoard",
+  matteBoardWrite: "matteos.writeBoard",
   projectsCreateNew: "projects.createNew",
   projectsCreateFromThread: "projects.createFromThread",
 
@@ -1348,6 +1351,17 @@ const WsProjectsEnsureScratchRpc = Rpc.make(WS_METHODS.projectsEnsureScratch, {
   error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
 });
 
+const WsMatteBoardReadRpc = Rpc.make(WS_METHODS.matteBoardRead, {
+  payload: MatteBoardRead,
+  success: MatteBoardSnapshot,
+  error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
+});
+const WsMatteBoardWriteRpc = Rpc.make(WS_METHODS.matteBoardWrite, {
+  payload: MatteBoardWrite,
+  success: MatteBoardSnapshot,
+  error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
+});
+
 const WsProjectsCreateNewRpc = Rpc.make(WS_METHODS.projectsCreateNew, {
   payload: ProjectCreateNewInput,
   success: ProjectCreateNewResult,
@@ -2121,6 +2135,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsSearchContentsRpc,
   WsProjectsSearchEntriesRpc,
   WsProjectsEnsureScratchRpc,
+  WsMatteBoardReadRpc,
+  WsMatteBoardWriteRpc,
   WsProjectsCreateNewRpc,
   WsProjectsCreateFromThreadRpc,
   WsProjectsWriteFileRpc,

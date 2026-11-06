@@ -1,5 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { BoardContext } from "../matteos/BoardStore.ts";
 import { expect, it, vi } from "vite-plus/test";
 import { it as effectIt } from "@effect/vitest";
 import {
@@ -9,6 +10,7 @@ import {
   GitCommandError,
   MessageId,
   NodeId,
+  OrchestrationDispatchCommandError,
   ProviderSessionId,
   ProviderThreadId,
   ProviderTurnId,
@@ -1040,6 +1042,44 @@ function makeLocalCommandHarness(input: {
     }).pipe(Effect.provide(layer)),
   };
 }
+
+effectIt.effect(
+  "sends the linked board revision to the provider while preserving the displayed user message",
+  () =>
+    Effect.gen(function* () {
+      for (const text of ["Valuta la roadmap", "/src/main.ts contiene il problema"]) {
+        const harness = makeLocalCommandHarness({ text, sideChat: { contextRun: "delivered" } });
+        harness.tryHandlePromptCommand.mockImplementation(() => Effect.succeed(false));
+        yield* harness.start.pipe(
+          Effect.provideService(BoardContext, {
+            contextFor: () => Effect.succeed("Roadmap revision 2"),
+          }),
+        );
+        expect(harness.startTurn.mock.calls[0]?.[0].message.text).toBe(
+          "Roadmap revision 2\n\n" + text,
+        );
+        expect(harness.projection().messages.some((message) => message.text === text)).toBe(true);
+      }
+    }),
+);
+
+effectIt.effect("settles a context read failure when no retry remains", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Continue",
+      sideChat: { contextRun: "delivered" },
+    });
+    const service = {
+      contextFor: () =>
+        Effect.fail(new OrchestrationDispatchCommandError({ message: "Roadmap unavailable" })),
+    };
+    yield* harness.startWithRetry.pipe(Effect.provideService(BoardContext, service), Effect.flip);
+    expect(harness.settledRuns).toEqual([]);
+    yield* harness.start.pipe(Effect.provideService(BoardContext, service));
+    expect(harness.settledRuns).toEqual(["failed"]);
+    expect(harness.startTurn).not.toHaveBeenCalled();
+  }),
+);
 
 effectIt.effect(
   "recovers the local or pushed thread tip, else the current branch, remote default, or detached HEAD",
