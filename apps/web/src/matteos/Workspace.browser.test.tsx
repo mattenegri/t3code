@@ -1,0 +1,147 @@
+import { createMemoryHistory } from "@tanstack/react-router";
+import {
+  type MatteBoardSnapshot,
+  type MatteBoardWrite,
+  emptyMatteBoard,
+  WS_METHODS,
+  ORCHESTRATION_V2_WS_METHODS,
+  type OrchestrationV2ThreadLaunchInput,
+} from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
+import type * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import { expect, it, vi } from "vite-plus/test";
+import { page } from "vite-plus/test/browser";
+import "~/index.css";
+import { AppRoot } from "~/AppRoot";
+import { getRouter } from "~/router";
+import { __setClientSettingsForTests } from "~/hooks/useSettings";
+import {
+  installFakeEnvironment,
+  threadWithHistory,
+  type FakeDriver,
+} from "../../test/fakeEnvironment";
+import { render } from "../../test/render";
+
+vi.mock("../../../../packages/client-runtime/src/connection/driver.ts", async (original) => {
+  const [actual, { fakeDriver }, Layer] = await Promise.all([
+    original<{ readonly ConnectionDriver: Context.Key<unknown, FakeDriver> }>(),
+    import("../../test/fakeEnvironment"),
+    import("effect/Layer"),
+  ]);
+  return { ...actual, layer: Layer.succeed(actual.ConnectionDriver, fakeDriver) };
+});
+
+it("switches views, retains task conversations and launches another in the same worktree", async () => {
+  await page.viewport(1440, 900);
+  const history = threadWithHistory("roadmap", 1);
+  const roadmap = {
+    ...history,
+    title: "Roadmap",
+    items: history.items.map((i) =>
+      i.type === "user_message"
+        ? { ...i, text: "Quale task posso affrontare per primo?" }
+        : i.type === "assistant_message"
+          ? {
+              ...i,
+              text: "Completa la ricerca nella lista prima di rivedere i colori. I criteri del filtro sono già definiti nel task.",
+            }
+          : i,
+    ),
+  };
+  const first = {
+    ...threadWithHistory("task-analysis", 1),
+    title: "Analisi del task",
+    branch: "feat/ricerca",
+    worktreePath: "/worktrees/ricerca",
+  };
+  const task = {
+    id: "screen-test",
+    title: "Ricerca nella lista",
+    notes: "Mantieni i filtri attivi",
+    status: "doing" as const,
+    workspace: "worktree" as const,
+    branch: "feat/ricerca",
+    worktreePath: "/worktrees/ricerca",
+    threadIds: [first.id],
+  };
+  let saved: MatteBoardSnapshot = {
+    revision: 1,
+    board: {
+      ...emptyMatteBoard,
+      roadmap: "Preparare il primo rilascio",
+      projectThreadId: roadmap.id,
+      tasks: [
+        task,
+        {
+          ...task,
+          id: "access",
+          title: "Navigazione da tastiera",
+          status: "todo",
+          branch: null,
+          worktreePath: null,
+          threadIds: [],
+        },
+        {
+          ...task,
+          id: "setup",
+          title: "Aprire il primo progetto",
+          status: "done",
+          branch: "feat/progetto",
+          worktreePath: null,
+          threadIds: [],
+        },
+      ],
+    },
+  };
+  let launch: OrchestrationV2ThreadLaunchInput | undefined;
+  using _fixture = installFakeEnvironment([roadmap, first], {
+    [WS_METHODS.matteBoardRead]: () => Effect.succeed(saved),
+    [WS_METHODS.matteBoardWrite]: (input: MatteBoardWrite) => {
+      saved = { revision: input.revision + 1, board: input.board };
+      return Effect.succeed(saved);
+    },
+    [ORCHESTRATION_V2_WS_METHODS.launchThread]: (input: OrchestrationV2ThreadLaunchInput) => {
+      launch = input;
+      return Effect.never;
+    },
+  });
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const router = getRouter(createMemoryHistory({ initialEntries: ["/tasks"] }));
+  await router.load();
+  await using _screen = await render(<AppRoot router={router} />, { router: false }); // AppRoot supplies the product router.
+  await expect.element(page.getByRole("heading", { name: "Chat di progetto" })).toBeVisible();
+  await expect
+    .element(page.getByText("Completa la ricerca nella lista", { exact: false }))
+    .toBeVisible();
+  await page.getByRole("textbox", { name: "Nome del nuovo task" }).fill("Verifica colori");
+  await page.getByRole("button", { name: "Aggiungi task", exact: true }).click();
+  await expect.element(page.getByRole("button", { name: /Verifica colori/ })).toBeVisible();
+  await page.getByRole("button", { name: "Lista", exact: true }).click();
+  await expect.element(page.getByRole("button", { name: /Ricerca nella lista/ })).toBeVisible();
+  await page.viewport(760, 850);
+  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  await expect.element(page.getByRole("heading", { name: "Chat di progetto" })).toBeVisible();
+  await page.getByRole("button", { name: "Task", exact: true }).click();
+  await page.viewport(1440, 900);
+  await page.getByRole("button", { name: "Kanban", exact: true }).click();
+  await page.getByRole("button", { name: /Ricerca nella lista/ }).click();
+  await page.getByRole("button", { name: "Analisi del task" }).click();
+  await expect
+    .element(page.getByText("Answer 0 for task-analysis.", { exact: false }))
+    .toBeVisible();
+  await page.getByRole("button", { name: "Nuova conversazione", exact: true }).click();
+  await page.getByRole("textbox", { name: "Messaggio", exact: true }).fill("Implementa la ricerca");
+  await page.getByRole("button", { name: "Invia messaggio", exact: true }).click();
+  await vi.waitFor(() =>
+    expect(launch?.workspaceStrategy).toEqual({
+      type: "existing_worktree",
+      worktreePath: "/worktrees/ricerca",
+      branch: "feat/ricerca",
+    }),
+  );
+  expect(saved.board.tasks[0]?.threadIds).toContain(launch?.threadId);
+});

@@ -1,5 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { BoardContext } from "../matteos/BoardStore.ts";
 import { expect, it, vi } from "vite-plus/test";
 import { it as effectIt } from "@effect/vitest";
 import {
@@ -1039,6 +1040,28 @@ function makeLocalCommandHarness(input: {
     }).pipe(Effect.provide(layer)),
   };
 }
+
+effectIt.effect(
+  "sends the linked board revision to the provider while preserving the displayed user message",
+  () =>
+    Effect.gen(function* () {
+      const harness = makeLocalCommandHarness({
+        text: "Valuta la roadmap",
+        sideChat: { contextRun: "delivered" },
+      });
+      yield* harness.start.pipe(
+        Effect.provideService(BoardContext, {
+          contextFor: () => Effect.succeed("Roadmap revision 2"),
+        }),
+      );
+      expect(harness.startTurn.mock.calls[0]?.[0].message.text).toBe(
+        "Roadmap revision 2\n\nValuta la roadmap",
+      );
+      expect(
+        harness.projection().messages.some((message) => message.text === "Valuta la roadmap"),
+      ).toBe(true);
+    }),
+);
 
 effectIt.effect(
   "recovers the local or pushed thread tip, else the current branch, remote default, or detached HEAD",

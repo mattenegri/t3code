@@ -253,6 +253,7 @@ import {
 } from "./ui/combobox";
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import { MatteSidebarLink } from "../matteos/SidebarLink";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { TooltipProvider } from "./ui/tooltip";
 import { composerDraftHasUserContent, DraftId, useComposerDraftStore } from "../composerDraftStore";
@@ -2991,6 +2992,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         className="min-h-full"
         fixedHeader={
           <SidebarGroup className="z-[1]">
+            <MatteSidebarLink
+              project={scopedProjectRefs[0] ?? newThreadContext.defaultProjectRef}
+            />
             <SidebarThreadHeader
               hasProjects={projectGroups.length > 0}
               projectScope={
