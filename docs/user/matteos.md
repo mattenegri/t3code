@@ -10,6 +10,14 @@ Per concentrarti sulla Kanban puoi chiudere la sidebar a sinistra e la chat a de
 
 Dentro un task, **Nuova conversazione** apre un thread T3. Al primo messaggio scegli il checkout del progetto o un worktree dedicato. Le conversazioni successive usano lo stesso spazio di lavoro. Passa sul contrassegno **Worktree** della scheda o selezionalo nel dettaglio del task per leggere il percorso. L’icona di apertura accanto al titolo della chat apre il thread nella vista completa di T3, con diff, terminale e verifiche. Eliminare il task conserva le conversazioni e i file del worktree.
 
+## Dove conservare le informazioni private
+
+Per ogni progetto privato, apri **Task**, seleziona il progetto e salva obiettivi, vincoli e decisioni in **Contesto**. Usa **Roadmap** per i prossimi passi e i task per il lavoro da svolgere. Con **Avvia matteOS.command** questi dati vengono salvati per progetto in `~/.matteos/t3/userdata/statev2.sqlite`, fuori dal checkout Git. Se ti colleghi a un altro ambiente, i dati risiedono nella directory `userdata` del server a cui sei connesso. Conserva anche gli eventuali backup in una destinazione privata.
+
+Se parti da appunti esistenti, tieni gli originali in una cartella privata fuori dai checkout. **Aggiungi da file** copia il testo nella bozza. Rileggilo prima di salvarlo. Per valutare le priorità, usa la chat di progetto con un provider autorizzato a trattare quei dati. A ogni turno ordinario il provider riceve contesto, roadmap e tutti i task ordinati. Nella chat di un task riceve lo stesso contesto e la stessa roadmap, insieme al solo task selezionato. Anche i client autorizzati a leggere il progetto possono consultare la board.
+
+Conserva chiavi e token in un gestore di segreti. Non inserirli nella board, nei file importati o nelle chat. Per fornire una credenziale a T3, segui la [guida ai segreti](secrets.md).
+
 ## Avvio locale
 
 Su macOS, apri **Avvia matteOS.command** nel checkout compilato. Avvia l’interfaccia nel browser e conserva i dati del fork in `~/.matteos/t3`. Al primo utilizzo aggiungi il repository fra i progetti T3 e scegli un provider configurato sul computer.

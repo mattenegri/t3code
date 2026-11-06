@@ -2,6 +2,8 @@
 
 Questo fork include [matteOS](docs/user/matteos.md), con contesto di progetto, roadmap, task in Kanban e lista e conversazioni T3 legate ai worktree. Lo sviluppo del fork parte da `main`.
 
+Il repository è pubblico, i progetti gestiti con matteOS sono privati. È vietato pubblicare informazioni reali di progetti o task, credenziali e chiavi in commit, issue, pull request o allegati. Chi lavora al fork deve seguire la [regola di riservatezza](AGENTS.md#mandatory-privacy-rule-for-the-matteos-fork).
+
 T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
 
 Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, Google Antigravity, and fx. If they're set up on your computer, T3 Code can control them.

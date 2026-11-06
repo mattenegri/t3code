@@ -1,5 +1,13 @@
 # T3 Code
 
+## Mandatory privacy rule for the matteOS fork
+
+This repository is public. Projects managed with matteOS are private. Never commit or publish real project or task information, roadmap notes, chat transcripts, credentials, API keys, tokens, or pairing links. This applies to every branch and to commit messages, issues, pull requests, logs, screenshots, fixtures, and attachments. Use invented examples for tests and public evidence. Before staging files or publishing anything, review the exact content. If it contains private data, stop and remove it from the material being shared.
+
+Keep private planning in the project's matteOS board on its trusted T3 server. Keep credentials in a secret manager. Track private work in the board even when upstream guidance below would normally put it in a GitHub issue.
+
+Keep fork-specific behavior in the matteOS modules. Prefer existing T3 contracts and services, and limit changes to upstream code to the integration points the feature requires. This keeps upstream updates practical.
+
 T3 Code is a minimal GUI for coding agents. A Node WebSocket server wraps provider CLIs and agents (Codex, Claude Code, Cursor, Grok, OpenCode, Antigravity, Kiro) and serves web, desktop, and mobile clients.
 
 You can think of T3 Code as an open source "bring-your-own-subscription" alternative to apps like Claude Desktop, Codex App, Cursor Glass and Conductor.
