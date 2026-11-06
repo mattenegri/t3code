@@ -22,7 +22,7 @@ import { observeResize } from "../lib/observeResize";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { SidebarInset } from "../components/ui/sidebar";
 import { Button } from "../components/ui/button";
-import { Conversation } from "./Conversation";
+import { Conversation, type ConversationDraft } from "./Conversation";
 import { RoadmapEditor, TaskCollection, TaskDetail, type Save } from "./Board";
 import { readBoard, saveBoard } from "./atoms";
 import { Choice } from "./controls";
@@ -159,6 +159,7 @@ function ProjectBoard({
   const [list, setList] = useState(false);
   const [section, setSection] = useState<"tasks" | "roadmap">("tasks");
   const [taskId, setTaskId] = useState<string | null>(null);
+  const [drafts] = useState(() => new Map<string | null, ConversationDraft>());
   const [chat, setChat] = useState<{
     taskId: string | null;
     id: ThreadId | null;
@@ -207,9 +208,19 @@ function ProjectBoard({
   const { board, revision } = snapshot;
   const selected = board.tasks.find((t) => t.id === taskId);
   const taskForChat = board.tasks.find((t) => t.id === chat.taskId) ?? null;
-  const shownId = taskForChat ? chat.id : board.projectThreadId;
+  const shownId = taskForChat
+    ? chat.fresh
+      ? null
+      : chat.id && taskForChat.threadIds.includes(chat.id)
+        ? chat.id
+        : (taskForChat.threadIds[0] ?? null)
+    : board.projectThreadId;
   const switchChat = (taskId: string | null, id: ThreadId | null, fresh: boolean) => {
-    setChat((c) => ({ taskId, id, fresh, key: c.key + 1 }));
+    setChat((c) =>
+      c.taskId === taskId && c.id === id && c.fresh === fresh
+        ? c
+        : { taskId, id, fresh, key: c.key + 1 },
+    );
     openChat();
   };
   const props = { board, revision, save, disabled: saving || !writable };
@@ -220,8 +231,8 @@ function ProjectBoard({
       t.workspace === "root" && t.threadIds.length ? rootStatus.data?.refName : null;
     return {
       ...t,
-      branch: first?.branch ?? rootBranch ?? t.branch,
-      worktreePath: first?.worktreePath ?? t.worktreePath,
+      branch: rootBranch ?? first?.branch ?? t.branch,
+      worktreePath: first ? first.worktreePath : t.worktreePath,
     };
   });
   return (
@@ -314,17 +325,22 @@ function ProjectBoard({
           }
         >
           <Conversation
-            key={chat.key}
+            key={JSON.stringify([chat.key, taskForChat?.id ?? null])}
             project={project}
             board={board}
             task={taskForChat}
             threadId={shownId}
             isNew={taskForChat ? chat.fresh : false}
             visible={chatOpen}
+            drafts={drafts}
             shells={shells}
             save={save}
             disabled={props.disabled}
-            onOpen={(id) => setChat((c) => ({ ...c, id, fresh: false }))}
+            onOpen={(id) =>
+              setChat((current) =>
+                current.key === chat.key ? { ...current, id, fresh: false } : current,
+              )
+            }
             onProject={() => switchChat(null, null, false)}
           />
         </aside>

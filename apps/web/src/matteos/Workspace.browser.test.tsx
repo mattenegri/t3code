@@ -13,15 +13,17 @@ import * as Effect from "effect/Effect";
 import { expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 import "~/index.css";
+import { RoadmapEditor } from "./Board";
 import { AppRoot } from "~/AppRoot";
 import { getRouter } from "~/router";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 import {
   installFakeEnvironment,
+  projectionOf,
   threadWithHistory,
   type FakeDriver,
 } from "../../test/fakeEnvironment";
-import { render } from "../../test/render";
+import { act, render } from "../../test/render";
 
 vi.mock("../../../../packages/client-runtime/src/connection/driver.ts", async (original) => {
   const [actual, { fakeDriver }, Layer] = await Promise.all([
@@ -95,6 +97,10 @@ it("switches views, retains task conversations and launches another in the same 
     },
   };
   let launch: OrchestrationV2ThreadLaunchInput | undefined;
+  let finishLaunch!: () => void;
+  const response = new Promise<void>((resolve) => {
+    finishLaunch = resolve;
+  });
   using _fixture = installFakeEnvironment([roadmap, first], {
     [WS_METHODS.matteBoardRead]: () => Effect.succeed(saved),
     [WS_METHODS.matteBoardWrite]: (input: MatteBoardWrite) => {
@@ -103,7 +109,11 @@ it("switches views, retains task conversations and launches another in the same 
     },
     [ORCHESTRATION_V2_WS_METHODS.launchThread]: (input: OrchestrationV2ThreadLaunchInput) => {
       launch = input;
-      return Effect.never;
+      return Effect.promise(async () => {
+        await response;
+        const thread = threadWithHistory(String(input.threadId), 1);
+        return { threadId: thread.id, resumed: false, projection: projectionOf(thread) };
+      });
     },
   });
   __setClientSettingsForTests({
@@ -153,12 +163,21 @@ it("switches views, retains task conversations and launches another in the same 
   await button("Nascondi chat").click();
   await page.getByRole("button", { name: "Kanban", exact: true }).click();
   await page.getByRole("button", { name: /Ricerca nella lista/ }).click();
+  await page.getByRole("button", { name: "Mostra percorso del worktree" }).click();
+  await expect.element(page.getByText("/worktrees/ricerca", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Mostra percorso del worktree" }).click();
   await page.getByRole("button", { name: "Analisi del task" }).click();
   await expect
     .element(page.getByText("Answer 0 for task-analysis.", { exact: false }))
     .toBeVisible();
   await page.getByRole("button", { name: "Nuova conversazione", exact: true }).click();
   await page.getByRole("textbox", { name: "Messaggio", exact: true }).fill("Implementa la ricerca");
+  await button("Chat di progetto").click();
+  await expect.element(page.getByRole("heading", { name: "Chat di progetto" })).toBeVisible();
+  await button("Nuova conversazione").click();
+  await expect
+    .element(page.getByRole("textbox", { name: "Messaggio", exact: true }))
+    .toHaveValue("Implementa la ricerca");
   await button("Nascondi chat").click();
   await expect.element(page.getByRole("heading", { name: "Ricerca nella lista" })).toBeVisible();
   await button("Mostra chat").click();
@@ -173,5 +192,40 @@ it("switches views, retains task conversations and launches another in the same 
       branch: "feat/ricerca",
     }),
   );
+  expect(launch?.title).toBe("Implementa la ricerca");
   expect(saved.board.tasks[0]?.threadIds).toContain(launch?.threadId);
+  await button("Analisi del task").click();
+  await expect
+    .element(page.getByText("Answer 0 for task-analysis.", { exact: false }))
+    .toBeVisible();
+  await act(async () => {
+    finishLaunch();
+    await response;
+  });
+  await expect
+    .element(page.getByText("Answer 0 for task-analysis.", { exact: false }))
+    .toBeVisible();
+  await expect
+    .element(page.getByRole("link", { name: "Apri conversazione in T3" }))
+    .toHaveAttribute("href", expect.stringContaining(String(first.id)));
+});
+
+it("preserves a roadmap draft across unrelated revisions and resolves overlapping edits", async () => {
+  const initial = { ...emptyMatteBoard, roadmap: "Prima bozza", context: "Contesto iniziale" };
+  const save = vi.fn(async () => true);
+  const props = { close: () => {}, save, disabled: false };
+  await using screen = await render(<RoadmapEditor {...props} board={initial} revision={1} />);
+  const roadmap = page.getByRole("textbox", { name: "Roadmap" });
+  await roadmap.fill("La mia proposta");
+  const latest = { ...initial, context: "Nuovo contesto" };
+  await screen.rerender(<RoadmapEditor {...props} board={latest} revision={2} />);
+  await page.getByRole("button", { name: "Salva", exact: true }).click();
+  expect(save.mock.calls[0]).toEqual([{ ...latest, roadmap: "La mia proposta" }, 2]);
+  const remote = { ...latest, roadmap: "Proposta di un collega" };
+  await screen.rerender(<RoadmapEditor {...props} board={remote} revision={3} />);
+  await expect.element(page.getByRole("button", { name: "Salva", exact: true })).toBeDisabled();
+  await expect.element(roadmap).toHaveValue("La mia proposta");
+  await page.getByRole("button", { name: "Mantieni la mia modifica" }).click();
+  await page.getByRole("button", { name: "Salva", exact: true }).click();
+  expect(save.mock.calls[1]).toEqual([{ ...remote, roadmap: "La mia proposta" }, 3]);
 });

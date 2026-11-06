@@ -30,12 +30,26 @@ it.effect(
         worktreePath: "/worktrees/checkout",
         threadIds: [codingChat, reviewChat],
       };
+      yield* sql`INSERT INTO orchestration_v2_projection_threads
+        (thread_id,project_id,title,default_provider,runtime_mode,interaction_mode,created_at,updated_at,payload_json)
+        VALUES (${codingChat},${projectId},'Coding','codex','full-access','default','2026-11-06','2026-11-06',
+        ${JSON.stringify({ branch: task.branch, worktreePath: task.worktreePath })})`;
       const board = {
         ...emptyMatteBoard,
         roadmap: "Ship a prototype",
         context: "Desktop first",
         projectThreadId: projectChat,
-        tasks: [task, { ...task, id: "b", title: "Second milestone", threadIds: [] }],
+        tasks: [
+          task,
+          {
+            ...task,
+            id: "b",
+            title: "Second milestone",
+            branch: null,
+            worktreePath: null,
+            threadIds: [],
+          },
+        ],
       };
       yield* store.write({ projectId, revision: 0, board });
       const otherClient = yield* BoardStore.make;
@@ -62,6 +76,63 @@ it.effect(
       assert.include(yield* store.contextFor(projectId, codingChat, RunId.make("next")), "Revised");
       assert.equal((yield* store.read(projectId)).revision, 2);
     }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+);
+
+it.effect("recovers from deleted or moved threads without losing pending launches", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const projectId = ProjectId.make("alpha");
+    yield* sql`INSERT INTO projection_projects (project_id,title,workspace_root,scripts_json,created_at,updated_at)
+      VALUES (${projectId}, 'Alpha', '/alpha', '[]', '2026-11-06', '2026-11-06')`;
+    const primary = ThreadId.make("primary");
+    const surviving = ThreadId.make("surviving");
+    const pending = ThreadId.make("pending");
+    const overview = ThreadId.make("overview");
+    const store = yield* BoardStore.make;
+    const board = {
+      ...emptyMatteBoard,
+      projectThreadId: overview,
+      tasks: [
+        {
+          id: "a",
+          title: "Parallel",
+          notes: "",
+          status: "todo" as const,
+          workspace: "worktree" as const,
+          branch: null,
+          worktreePath: null,
+          threadIds: [primary, surviving, pending],
+        },
+      ],
+    };
+    yield* store.write({ projectId, revision: 0, board });
+    for (const [id, owner, removed] of [
+      [primary, projectId, true],
+      [surviving, projectId, false],
+      [overview, "another", false],
+    ] as const) {
+      yield* sql`INSERT INTO orchestration_v2_projection_threads
+        (thread_id,project_id,title,default_provider,runtime_mode,interaction_mode,created_at,updated_at,deleted_at,payload_json)
+        VALUES (${id},${owner},'Test','codex','full-access','default','2026-11-06','2026-11-06',
+        ${removed ? "2026-11-06" : null},${JSON.stringify({ branch: "feat/live", worktreePath: "/worktrees/live" })})`;
+    }
+    const current = yield* store.read(projectId);
+    assert.isNull(current.board.projectThreadId);
+    assert.deepEqual(current.board.tasks[0]?.threadIds, [surviving, pending]);
+    assert.equal(current.board.tasks[0]?.worktreePath, "/worktrees/live");
+    assert.isNull(yield* store.contextFor(projectId, primary, RunId.make("late")));
+    assert.isNull(yield* store.contextFor(projectId, overview, RunId.make("foreign")));
+    assert.isTrue(
+      (yield* Effect.result(store.write({ projectId, revision: 1, board })))._tag === "Failure",
+    );
+    const replacement = ThreadId.make("new-overview");
+    yield* store.write({
+      projectId,
+      revision: 1,
+      board: { ...current.board, projectThreadId: replacement },
+    });
+    assert.include(yield* store.contextFor(projectId, replacement, RunId.make("new")), "Parallel");
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
 
 it.effect("reopens the saved board through a fresh SQLite connection", () =>

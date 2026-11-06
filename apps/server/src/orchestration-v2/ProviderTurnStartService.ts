@@ -850,10 +850,25 @@ export const layer: Layer.Layer<
         text: message.text,
         records: message.context?.records ?? [],
       });
-      const boardContext = message.text.trimStart().startsWith("/")
-        ? null
-        : yield* matteBoards.contextFor(projection.thread.projectId, projection.thread.id, run.id);
-      const userText = boardContext ? boardContext + "\n\n" + composedText : composedText;
+      // Provider commands need the leading command token intact; absolute file paths are ordinary prompts.
+      const commandPrompt = /^\/[\w.:-]+(?:\s|$)/u.test(message.text.trimStart());
+      const contextResult = yield* Effect.result(
+        commandPrompt
+          ? Effect.succeed(null)
+          : matteBoards.contextFor(projection.thread.projectId, projection.thread.id, run.id),
+      );
+      if (contextResult._tag === "Failure") {
+        if (input.willRetry) return yield* contextResult.failure;
+        yield* settleStartFailure({
+          signal: "board-context-failure",
+          title: "Impossibile caricare il contesto della roadmap",
+          error: contextResult.failure,
+        });
+        return;
+      }
+      const userText = contextResult.success
+        ? contextResult.success + "\n\n" + composedText
+        : composedText;
       // Codex and Claude parse /goal from the prompt, so it goes verbatim and history waits a turn.
       const goalDriver = session.driver === "codex" || session.driver === "claudeAgent";
       const goalCommand = goalDriver && parseGoalCommand(message) !== null;

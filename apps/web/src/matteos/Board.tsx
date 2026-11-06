@@ -77,11 +77,13 @@ export function TaskCollection({
             worktreePath: null,
             threadIds: [],
           };
-          if (await save({ ...board, tasks: [...board.tasks, task] })) setTitle("");
+          if (await save({ ...board, tasks: [...board.tasks, task] }))
+            setTitle((current) => (current.trim() === value ? "" : current));
         }}
       >
         <div className="min-w-0 flex-1">
           <Input
+            readOnly={disabled}
             placeholder="Aggiungi un task…"
             aria-label="Nome del nuovo task"
             maxLength={240}
@@ -156,6 +158,44 @@ export function TaskCollection({
   );
 }
 
+function useTextEdit(saved: string) {
+  const [draft, setDraft] = useState<{ base: string; value: string } | null>(null);
+  const value = draft?.value ?? saved;
+  return {
+    value,
+    saved,
+    conflict: draft !== null && draft.base !== saved && value !== saved,
+    change: (next: string) =>
+      setDraft(
+        next === saved
+          ? null
+          : { base: !draft || draft.value === saved ? saved : draft.base, value: next },
+      ),
+    useSaved: () => setDraft(null),
+    keepDraft: () => setDraft({ base: saved, value }),
+  };
+}
+
+function EditConflict({ field, label }: { field: ReturnType<typeof useTextEdit>; label: string }) {
+  if (!field.conflict) return null;
+  return (
+    <div role="alert" className="grid gap-1 text-sm">
+      <p>{label} è cambiato in un’altra finestra. Versione salvata:</p>
+      <p className="max-h-32 overflow-auto whitespace-pre-wrap break-words text-muted-foreground">
+        {field.saved || "(vuoto)"}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" size="sm" variant="outline" onClick={field.useSaved}>
+          Usa la versione salvata
+        </Button>
+        <Button type="button" size="sm" variant="secondary" onClick={field.keepDraft}>
+          Mantieni la mia modifica
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function RoadmapEditor({
   board,
   revision,
@@ -163,39 +203,47 @@ export function RoadmapEditor({
   disabled,
   close,
 }: PanelProps & { close: () => void }) {
-  const [base] = useState(revision);
-  const [roadmap, setRoadmap] = useState(board.roadmap);
-  const [context, setContext] = useState(board.context);
+  const roadmap = useTextEdit(board.roadmap);
+  const context = useTextEdit(board.context);
+  const blocked = disabled || roadmap.conflict || context.conflict;
   return (
     <form
       className="grid content-start gap-4"
       onSubmit={async (e) => {
         e.preventDefault();
-        if (await save({ ...board, roadmap, context }, base)) close();
+        if (
+          !blocked &&
+          (await save({ ...board, roadmap: roadmap.value, context: context.value }, revision))
+        )
+          close();
       }}
     >
       <label className="grid gap-1.5 text-sm font-medium">
         Roadmap
         <Textarea
           rows={5}
+          readOnly={disabled}
           maxLength={16000}
-          value={roadmap}
-          onChange={(e) => setRoadmap(e.target.value)}
+          value={roadmap.value}
+          onChange={(e) => roadmap.change(e.target.value)}
           placeholder="Obiettivi e prossimi passi"
         />
       </label>
+      <EditConflict field={roadmap} label="Il testo della roadmap" />
       <label className="grid gap-1.5 text-sm font-medium">
         Contesto del progetto
         <Textarea
           rows={5}
+          readOnly={disabled}
           maxLength={16000}
-          value={context}
-          onChange={(e) => setContext(e.target.value)}
+          value={context.value}
+          onChange={(e) => context.change(e.target.value)}
           placeholder="Decisioni, materiali e vincoli per gli agenti"
         />
       </label>
+      <EditConflict field={context} label="Il contesto" />
       <div className="flex gap-2">
-        <Button type="submit" disabled={disabled}>
+        <Button type="submit" disabled={blocked}>
           Salva
         </Button>
         <Button type="button" variant="ghost" onClick={close}>
@@ -225,9 +273,6 @@ export function TaskDetail({
 }) {
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [base, setBase] = useState(revision);
-  const [title, setTitle] = useState(task.title),
-    [notes, setNotes] = useState(task.notes);
   const update = (patch: Partial<MatteTask>, version?: number) =>
     save(
       { ...board, tasks: board.tasks.map((t) => (t.id === task.id ? { ...t, ...patch } : t)) },
@@ -251,36 +296,13 @@ export function TaskDetail({
         </Button>
       </div>
       {editing ? (
-        <form
-          className="grid gap-3"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (title.trim() && (await update({ title: title.trim(), notes }, base)))
-              setEditing(false);
-          }}
-        >
-          <Input
-            aria-label="Titolo"
-            maxLength={240}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-          <Textarea
-            aria-label="Dettagli del task"
-            rows={5}
-            maxLength={6000}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-          />
-          <div className="flex gap-2">
-            <Button type="submit" disabled={disabled || !title.trim()}>
-              Salva
-            </Button>
-            <Button type="button" variant="ghost" onClick={() => setEditing(false)}>
-              Annulla
-            </Button>
-          </div>
-        </form>
+        <TaskEditor
+          task={task}
+          revision={revision}
+          disabled={disabled}
+          update={update}
+          close={() => setEditing(false)}
+        />
       ) : (
         <div className="grid gap-2">
           <div className="flex items-start justify-between gap-2">
@@ -289,18 +311,13 @@ export function TaskDetail({
               variant="ghost-muted"
               size="sm"
               disabled={disabled}
-              onClick={() => {
-                setTitle(task.title);
-                setNotes(task.notes);
-                setBase(revision);
-                setEditing(true);
-              }}
+              onClick={() => setEditing(true)}
             >
               Modifica
             </Button>
           </div>
           {task.notes && <p className="whitespace-pre-wrap break-words text-sm">{task.notes}</p>}
-          <WorkspaceLabel branch={task.branch} path={task.worktreePath} />
+          <WorkspaceLabel branch={task.branch} path={task.worktreePath} interactive />
         </div>
       )}
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -340,7 +357,9 @@ export function TaskDetail({
         <h3 className="text-sm font-medium">Conversazioni</h3>
         {task.threadIds.map((id, i) => (
           <Button key={id} variant="outline" size="sm" onClick={() => openChat(id)}>
-            {titles.get(id) ?? "Conversazione " + (i + 1)}
+            {titles.get(id) && titles.get(id) !== task.title
+              ? titles.get(id)
+              : "Conversazione " + (i + 1)}
           </Button>
         ))}
         <div>
@@ -374,5 +393,59 @@ export function TaskDetail({
         )}
       </div>
     </div>
+  );
+}
+
+function TaskEditor({
+  task,
+  revision,
+  disabled,
+  update,
+  close,
+}: {
+  task: MatteTask;
+  revision: number;
+  disabled: boolean;
+  update: (patch: Partial<MatteTask>, revision: number) => Promise<boolean>;
+  close: () => void;
+}) {
+  const title = useTextEdit(task.title);
+  const notes = useTextEdit(task.notes);
+  const blocked = disabled || title.conflict || notes.conflict || !title.value.trim();
+  return (
+    <form
+      className="grid gap-3"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (!blocked && (await update({ title: title.value.trim(), notes: notes.value }, revision)))
+          close();
+      }}
+    >
+      <Input
+        readOnly={disabled}
+        aria-label="Titolo"
+        maxLength={240}
+        value={title.value}
+        onChange={(e) => title.change(e.target.value)}
+      />
+      <EditConflict field={title} label="Il titolo" />
+      <Textarea
+        readOnly={disabled}
+        aria-label="Dettagli del task"
+        rows={5}
+        maxLength={6000}
+        value={notes.value}
+        onChange={(e) => notes.change(e.target.value)}
+      />
+      <EditConflict field={notes} label="Il testo del task" />
+      <div className="flex gap-2">
+        <Button type="submit" disabled={blocked}>
+          Salva
+        </Button>
+        <Button type="button" variant="ghost" onClick={close}>
+          Annulla
+        </Button>
+      </div>
+    </form>
   );
 }
