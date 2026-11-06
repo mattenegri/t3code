@@ -2,9 +2,11 @@
 
 Apri **Task** nella barra laterale di T3 e scegli il progetto. Kanban e Lista mostrano gli stessi task. La lista segue la priorità della roadmap. Dal dettaglio puoi cambiare la priorità, mentre trascinare una scheda fra colonne modifica il suo stato.
 
+Per concentrarti sulla Kanban puoi chiudere la sidebar a sinistra e la chat a destra, indipendentemente. Su desktop **Chat** ricorda la tua scelta; se lo spazio è poco, alterna task e conversazione senza perdere la bozza.
+
 **Roadmap** raccoglie obiettivi e contesto del progetto. La chat a fianco riceve questi dati e tutti i task nell’ordine scelto a ogni turno ordinario. Chiedile di valutare priorità, dipendenze e attività da svolgere in parallelo. Puoi rivedere le proposte nella conversazione e aggiornare la roadmap o i task.
 
-Dentro un task, **Nuova conversazione** apre un thread T3. Al primo messaggio scegli il checkout del progetto o un worktree dedicato. Le conversazioni successive usano lo stesso spazio di lavoro. Passa sul contrassegno **Worktree** per leggere il percorso. Il pulsante in alto a destra apre il thread nella vista completa di T3, con diff, terminale e verifiche. Eliminare il task conserva le conversazioni e i file del worktree.
+Dentro un task, **Nuova conversazione** apre un thread T3. Al primo messaggio scegli il checkout del progetto o un worktree dedicato. Le conversazioni successive usano lo stesso spazio di lavoro. Passa sul contrassegno **Worktree** per leggere il percorso. L’icona di apertura accanto al titolo della chat apre il thread nella vista completa di T3, con diff, terminale e verifiche. Eliminare il task conserva le conversazioni e i file del worktree.
 
 ## Avvio locale
 

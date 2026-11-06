@@ -37,7 +37,7 @@ export function Choice({
         if (v !== null) onChange(v);
       }}
     >
-      <SelectTrigger aria-label={label} size="sm">
+      <SelectTrigger className="min-w-0" aria-label={label} size="sm">
         <SelectValue />
       </SelectTrigger>
       <SelectPopup>

@@ -44,6 +44,7 @@ export function Conversation({
   onOpen,
   onProject,
   disabled,
+  visible,
 }: {
   project: EnvironmentProject;
   board: MatteBoard;
@@ -55,6 +56,7 @@ export function Conversation({
   onOpen: (id: ThreadId) => void;
   onProject: () => void;
   disabled: boolean;
+  visible: boolean;
 }) {
   const config = useAtomValue(serverEnvironment.configValueAtom(project.environmentId));
   const launch = useAtomCommand(launchChat, { reportFailure: false });
@@ -171,12 +173,13 @@ export function Conversation({
         setBusy(false);
       });
   };
+  if (!visible) return null;
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       <header className="flex min-h-12 items-center gap-2 border-b border-border px-4">
         <MessageSquareIcon className="size-4 shrink-0 text-muted-foreground" />
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">
-          {task ? task.title : "Chat di progetto"}
+          {task ? ownShell?.title || task.title : "Chat di progetto"}
         </h2>
         {task && (
           <Button variant="ghost-muted" size="xs" onClick={onProject}>
@@ -184,18 +187,30 @@ export function Conversation({
           </Button>
         )}
         {threadId && !isNew && (
-          <Link
-            to="/$environmentId/$threadId"
-            params={buildThreadRouteParams({ environmentId: project.environmentId, threadId })}
+          <Button
+            variant="ghost-muted"
+            size="icon-sm"
+            render={
+              <Link
+                to="/$environmentId/$threadId"
+                params={buildThreadRouteParams({ environmentId: project.environmentId, threadId })}
+              />
+            }
+            title="Apri conversazione in T3"
             aria-label="Apri conversazione in T3"
           >
             <ExternalLinkIcon className="size-4" />
-          </Link>
+          </Button>
         )}
       </header>
       {knownThread && !busy && !failure ? (
-        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <ChatView routeKind="server" environmentId={project.environmentId} threadId={threadId} />
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden [contain:layout]">
+          <ChatView
+            hostProvidesHeader
+            routeKind="server"
+            environmentId={project.environmentId}
+            threadId={threadId}
+          />
         </div>
       ) : (
         <form

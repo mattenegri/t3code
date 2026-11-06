@@ -1,14 +1,26 @@
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
-import { Columns3Icon, ListIcon, MapIcon } from "lucide-react";
+import * as Schema from "effect/Schema";
+import {
+  ArrowLeftIcon,
+  Columns3Icon,
+  ListIcon,
+  MapIcon,
+  PanelRightCloseIcon,
+  PanelRightOpenIcon,
+} from "lucide-react";
 import type { MatteBoard, MatteBoardSnapshot, ThreadId } from "@t3tools/contracts";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
 import { useProjects, useThreadShellsForProjectRefs } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { useAtomCommand } from "../state/use-atom-command";
 import { vcsEnvironment } from "../state/vcs";
-import { SidebarInset, SidebarTrigger } from "../components/ui/sidebar";
+import { isElectron } from "../env";
+import { useLocalStorage } from "../hooks/useLocalStorage";
+import { observeResize } from "../lib/observeResize";
+import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
+import { SidebarInset } from "../components/ui/sidebar";
 import { Button } from "../components/ui/button";
 import { Conversation } from "./Conversation";
 import { RoadmapEditor, TaskCollection, TaskDetail, type Save } from "./Board";
@@ -28,13 +40,25 @@ export function MatteWorkspace({
   const project = projectId
     ? projects.find((p) => p.id === projectId && p.environmentId === environmentId)
     : projects[0];
+  const [split, setSplit] = useState(false);
+  const measure = (element: HTMLElement | null) => {
+    if (!element) return;
+    const update = () => setSplit(element.clientWidth >= 1024);
+    update();
+    return observeResize(element, update);
+  };
+  const [desktopChat, setDesktopChat] = useLocalStorage("matteos:chat-open", true, Schema.Boolean);
+  const [compactChat, setCompactChat] = useState(false);
+  const chatOpen = split ? desktopChat : compactChat;
+  const setChatOpen = split ? setDesktopChat : setCompactChat;
+  const chatId = useId();
+  const chatAction = !chatOpen ? "Mostra chat" : split ? "Nascondi chat" : "Torna ai task";
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden">
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-3">
-        <SidebarTrigger />
+    <SidebarInset ref={measure} className="h-dvh min-h-0 overflow-hidden">
+      <WorkspacePageHeader electron={isElectron} className="border-b border-border">
         <h1 className="text-base font-semibold">Task</h1>
         {projects.length > 0 && (
-          <div className="max-w-64 min-w-0">
+          <div className="max-w-64 min-w-0 [-webkit-app-region:no-drag]">
             <Choice
               label="Progetto"
               value={project ? JSON.stringify([project.environmentId, project.id]) : ""}
@@ -46,14 +70,48 @@ export function MatteWorkspace({
                 const p = projects.find(
                   (item) => JSON.stringify([item.environmentId, item.id]) === v,
                 );
-                if (p) chooseProject(p.environmentId, p.id);
+                if (p) {
+                  setCompactChat(false);
+                  chooseProject(p.environmentId, p.id);
+                }
               }}
             />
           </div>
         )}
-      </header>
+        {project && (
+          <div className="ml-auto shrink-0 [-webkit-app-region:no-drag]">
+            <Button
+              size="sm"
+              variant={chatOpen ? "secondary" : "ghost-muted"}
+              aria-label={chatAction}
+              title={chatAction}
+              aria-expanded={chatOpen}
+              aria-controls={chatId}
+              onClick={() => setChatOpen(!chatOpen)}
+            >
+              {chatOpen ? (
+                split ? (
+                  <PanelRightCloseIcon />
+                ) : (
+                  <ArrowLeftIcon />
+                )
+              ) : (
+                <PanelRightOpenIcon />
+              )}
+              {chatOpen && !split ? "Task" : "Chat"}
+            </Button>
+          </div>
+        )}
+      </WorkspacePageHeader>
       {project ? (
-        <ProjectBoard key={JSON.stringify([project.environmentId, project.id])} project={project} />
+        <ProjectBoard
+          key={JSON.stringify([project.environmentId, project.id])}
+          project={project}
+          split={split}
+          chatOpen={chatOpen}
+          chatId={chatId}
+          openChat={() => setChatOpen(true)}
+        />
       ) : (
         <p className="p-5 text-sm text-muted-foreground">
           {projectId
@@ -65,7 +123,19 @@ export function MatteWorkspace({
   );
 }
 
-function ProjectBoard({ project }: { project: EnvironmentProject }) {
+function ProjectBoard({
+  project,
+  split,
+  chatOpen,
+  chatId,
+  openChat,
+}: {
+  project: EnvironmentProject;
+  split: boolean;
+  chatOpen: boolean;
+  chatId: string;
+  openChat: () => void;
+}) {
   const projectRef = { environmentId: project.environmentId, projectId: project.id };
   const server = useEnvironmentQuery(
     readBoard({ environmentId: project.environmentId, input: { projectId: project.id } }),
@@ -95,7 +165,6 @@ function ProjectBoard({ project }: { project: EnvironmentProject }) {
     fresh: boolean;
     key: number;
   }>({ taskId: null, id: null, fresh: false, key: 0 });
-  const [phoneChat, setPhoneChat] = useState(false);
   const save: Save = async (board: MatteBoard, version?: number) => {
     if (!snapshot || !writable || inFlight.current) return false;
     inFlight.current = true;
@@ -141,7 +210,7 @@ function ProjectBoard({ project }: { project: EnvironmentProject }) {
   const shownId = taskForChat ? chat.id : board.projectThreadId;
   const switchChat = (taskId: string | null, id: ThreadId | null, fresh: boolean) => {
     setChat((c) => ({ taskId, id, fresh, key: c.key + 1 }));
-    setPhoneChat(true);
+    openChat();
   };
   const props = { board, revision, save, disabled: saving || !writable };
   const titles = new Map(shells.map((s) => [s.id, s.title]));
@@ -157,22 +226,6 @@ function ProjectBoard({ project }: { project: EnvironmentProject }) {
   });
   return (
     <>
-      <div className="flex gap-1 border-b border-border px-3 py-1 lg:hidden">
-        <Button
-          size="xs"
-          variant={!phoneChat ? "secondary" : "ghost"}
-          onClick={() => setPhoneChat(false)}
-        >
-          Task
-        </Button>
-        <Button
-          size="xs"
-          variant={phoneChat ? "secondary" : "ghost"}
-          onClick={() => setPhoneChat(true)}
-        >
-          Chat
-        </Button>
-      </div>
       {(error || server.error) && (
         <div role="alert" className="border-b border-border px-4 py-2 text-sm text-destructive">
           {error || server.error}
@@ -182,51 +235,54 @@ function ProjectBoard({ project }: { project: EnvironmentProject }) {
         <section
           aria-label="Pianificazione"
           className={
-            (phoneChat ? "hidden" : "flex") +
-            " min-w-0 flex-1 flex-col gap-4 overflow-auto p-4 lg:flex lg:flex-[1.15]"
+            (!split && chatOpen ? "hidden" : "flex") +
+            " min-w-0 flex-[1.45] flex-col gap-4 overflow-auto p-4"
           }
         >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-1">
+          {!selected && (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1">
+                <Button
+                  size="sm"
+                  aria-pressed={!list && section === "tasks"}
+                  variant={!list && section === "tasks" ? "secondary" : "ghost-muted"}
+                  onClick={() => {
+                    setList(false);
+                    setSection("tasks");
+                    setTaskId(null);
+                  }}
+                >
+                  <Columns3Icon />
+                  Kanban
+                </Button>
+                <Button
+                  size="sm"
+                  aria-pressed={list && section === "tasks"}
+                  variant={list && section === "tasks" ? "secondary" : "ghost-muted"}
+                  onClick={() => {
+                    setList(true);
+                    setSection("tasks");
+                    setTaskId(null);
+                  }}
+                >
+                  <ListIcon />
+                  Lista
+                </Button>
+              </div>
               <Button
                 size="sm"
-                aria-pressed={!list && section === "tasks"}
-                variant={!list && section === "tasks" ? "secondary" : "ghost-muted"}
+                aria-pressed={section === "roadmap"}
+                variant={section === "roadmap" ? "secondary" : "ghost-muted"}
                 onClick={() => {
-                  setList(false);
-                  setSection("tasks");
+                  setSection(section === "roadmap" ? "tasks" : "roadmap");
                   setTaskId(null);
                 }}
               >
-                <Columns3Icon />
-                Kanban
-              </Button>
-              <Button
-                size="sm"
-                aria-pressed={list && section === "tasks"}
-                variant={list && section === "tasks" ? "secondary" : "ghost-muted"}
-                onClick={() => {
-                  setList(true);
-                  setSection("tasks");
-                  setTaskId(null);
-                }}
-              >
-                <ListIcon />
-                Lista
+                <MapIcon />
+                Roadmap
               </Button>
             </div>
-            <Button
-              size="sm"
-              variant={section === "roadmap" ? "secondary" : "ghost-muted"}
-              onClick={() => {
-                setSection(section === "roadmap" ? "tasks" : "roadmap");
-                setTaskId(null);
-              }}
-            >
-              <MapIcon />
-              Roadmap
-            </Button>
-          </div>
+          )}
           {section === "roadmap" ? (
             <RoadmapEditor {...props} close={() => setSection("tasks")} />
           ) : selected ? (
@@ -248,11 +304,13 @@ function ProjectBoard({ project }: { project: EnvironmentProject }) {
             />
           )}
         </section>
+
         <aside
+          id={chatId}
+          hidden={!chatOpen}
           aria-label="Conversazione"
           className={
-            (phoneChat ? "block" : "hidden") +
-            " min-h-0 min-w-0 flex-1 border-l border-border lg:block"
+            "min-h-0 min-w-0 flex-1 overflow-hidden" + (split ? " border-l border-border" : "")
           }
         >
           <Conversation
@@ -262,6 +320,7 @@ function ProjectBoard({ project }: { project: EnvironmentProject }) {
             task={taskForChat}
             threadId={shownId}
             isNew={taskForChat ? chat.fresh : false}
+            visible={chatOpen}
             shells={shells}
             save={save}
             disabled={props.disabled}

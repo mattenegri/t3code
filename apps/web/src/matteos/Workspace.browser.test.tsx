@@ -117,16 +117,40 @@ it("switches views, retains task conversations and launches another in the same 
   await expect
     .element(page.getByText("Completa la ricerca nella lista", { exact: false }))
     .toBeVisible();
+  const button = (name: string) => page.getByRole("button", { name, exact: true });
+  const sidebarToggle = button("Toggle main sidebar");
+  const composer = page.getByTestId("composer-editor");
+  await composer.fill("Confronta le priorità");
+  await button("Nascondi chat").click();
+  await expect
+    .element(page.getByRole("complementary", { name: "Conversazione" }))
+    .not.toBeInTheDocument();
+  await sidebarToggle.click();
+  await expect.element(sidebarToggle).toHaveAttribute("aria-pressed", "false");
+  await button("Mostra chat").click();
+  await expect.element(page.getByRole("heading", { name: "Chat di progetto" })).toBeVisible();
+  await expect.element(sidebarToggle).toHaveAttribute("aria-pressed", "false");
+  await expect.element(composer).toHaveTextContent("Confronta le priorità");
+  await sidebarToggle.click();
   await page.getByRole("textbox", { name: "Nome del nuovo task" }).fill("Verifica colori");
   await page.getByRole("button", { name: "Aggiungi task", exact: true }).click();
   await expect.element(page.getByRole("button", { name: /Verifica colori/ })).toBeVisible();
   await page.getByRole("button", { name: "Lista", exact: true }).click();
   await expect.element(page.getByRole("button", { name: /Ricerca nella lista/ })).toBeVisible();
-  await page.viewport(760, 850);
-  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  await page.viewport(1200, 850);
+  await expect.element(button("Mostra chat")).toBeVisible();
+  await sidebarToggle.click();
+  await expect.element(button("Nascondi chat")).toBeVisible();
+  await sidebarToggle.click();
+  await page.viewport(390, 844);
+  await button("Mostra chat").click();
   await expect.element(page.getByRole("heading", { name: "Chat di progetto" })).toBeVisible();
-  await page.getByRole("button", { name: "Task", exact: true }).click();
+  await button("Torna ai task").click();
+  await sidebarToggle.click();
+  await page.getByRole("link", { name: "Task", exact: true }).click();
+  await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
   await page.viewport(1440, 900);
+  await button("Nascondi chat").click();
   await page.getByRole("button", { name: "Kanban", exact: true }).click();
   await page.getByRole("button", { name: /Ricerca nella lista/ }).click();
   await page.getByRole("button", { name: "Analisi del task" }).click();
@@ -135,6 +159,12 @@ it("switches views, retains task conversations and launches another in the same 
     .toBeVisible();
   await page.getByRole("button", { name: "Nuova conversazione", exact: true }).click();
   await page.getByRole("textbox", { name: "Messaggio", exact: true }).fill("Implementa la ricerca");
+  await button("Nascondi chat").click();
+  await expect.element(page.getByRole("heading", { name: "Ricerca nella lista" })).toBeVisible();
+  await button("Mostra chat").click();
+  await expect
+    .element(page.getByRole("textbox", { name: "Messaggio", exact: true }))
+    .toHaveValue("Implementa la ricerca");
   await page.getByRole("button", { name: "Invia messaggio", exact: true }).click();
   await vi.waitFor(() =>
     expect(launch?.workspaceStrategy).toEqual({
