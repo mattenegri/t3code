@@ -37,6 +37,7 @@ describe("RPC authorization scopes", () => {
 
   it("allows reading the board and restricts edits to operators", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.matteBoardRead)).toBe(AuthOrchestrationReadScope);
+    expect(requiredScopeForRpcMethod(WS_METHODS.matteTaskLink)).toBe(AuthOrchestrationReadScope);
     expect(requiredScopeForRpcMethod(WS_METHODS.matteBoardWrite)).toBe(
       AuthOrchestrationOperateScope,
     );

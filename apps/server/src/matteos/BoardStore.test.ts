@@ -53,7 +53,16 @@ it.effect(
       };
       yield* store.write({ projectId, revision: 0, board });
       const otherClient = yield* BoardStore.make;
-      assert.deepEqual(yield* otherClient.read(projectId), { revision: 1, board });
+      assert.deepEqual(yield* otherClient.read(projectId), {
+        revision: 1,
+        board,
+        pendingThreadIds: [reviewChat, projectChat],
+      });
+      assert.deepEqual(yield* store.taskLink(projectId, reviewChat), {
+        id: task.id,
+        title: task.title,
+      });
+      assert.isNull(yield* store.taskLink(projectId, projectChat));
       const firstRun = RunId.make("first");
       const projectContext = yield* store.contextFor(projectId, projectChat, firstRun);
       assert.include(projectContext, "Desktop first");
@@ -69,13 +78,25 @@ it.effect(
       assert.isNull(
         yield* store.contextFor(ProjectId.make("another-project"), codingChat, firstRun),
       );
-      yield* store.write({ projectId, revision: 1, board: { ...board, roadmap: "Revised" } });
+      yield* store.write({
+        projectId,
+        revision: 1,
+        board: {
+          ...board,
+          roadmap: "Revised",
+          tasks: [{ ...task, notes: "Check keyboard navigation" }, ...board.tasks.slice(1)],
+        },
+      });
       assert.include(
         (yield* otherClient.write({ projectId, revision: 1, board }).pipe(Effect.flip)).message,
         "altra finestra",
       );
       assert.include(yield* store.contextFor(projectId, codingChat, firstRun), "Ship a prototype");
       assert.include(yield* store.contextFor(projectId, codingChat, RunId.make("next")), "Revised");
+      assert.include(
+        yield* store.contextFor(projectId, reviewChat, RunId.make("next")),
+        "Check keyboard navigation",
+      );
       assert.equal((yield* store.read(projectId)).revision, 2);
     }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
@@ -120,6 +141,8 @@ it.effect("recovers from deleted or moved threads without losing pending launche
     }
     const current = yield* store.read(projectId);
     assert.isNull(current.board.projectThreadId);
+    assert.deepEqual(current.pendingThreadIds, [pending]);
+    assert.isNull(yield* store.taskLink(projectId, primary));
     assert.deepEqual(current.board.tasks[0]?.threadIds, [surviving, pending]);
     assert.equal(current.board.tasks[0]?.worktreePath, "/worktrees/live");
     assert.isNull(yield* store.contextFor(projectId, primary, RunId.make("late")));

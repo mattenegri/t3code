@@ -72,24 +72,28 @@ export const make = Effect.gen(function* () {
         "Una conversazione è stata eliminata o spostata. Rivedi la roadmap aggiornata.",
       );
     const byId = new Map(rows.map((r) => [r.id, r]));
+    const pendingThreadIds = ids.filter((id) => !byId.has(id));
     return {
-      ...board,
-      projectThreadId:
-        board.projectThreadId && unavailable.has(board.projectThreadId)
-          ? null
-          : board.projectThreadId,
-      tasks: board.tasks.map((task) => {
-        // An id without a projection is reserved before launch so the first turn already has context.
-        const threadIds = task.threadIds.filter((id) => !unavailable.has(id));
-        const first = threadIds[0];
-        const binding = first ? byId.get(first) : undefined;
-        return {
-          ...task,
-          threadIds,
-          branch: binding?.branch ?? null,
-          worktreePath: binding?.path ?? null,
-        };
-      }),
+      ...(pendingThreadIds.length ? { pendingThreadIds } : {}),
+      board: {
+        ...board,
+        projectThreadId:
+          board.projectThreadId && unavailable.has(board.projectThreadId)
+            ? null
+            : board.projectThreadId,
+        tasks: board.tasks.map((task) => {
+          // An id without a projection is reserved before launch so the first turn already has context.
+          const threadIds = task.threadIds.filter((id) => !unavailable.has(id));
+          const first = threadIds[0];
+          const binding = first ? byId.get(first) : undefined;
+          return {
+            ...task,
+            threadIds,
+            branch: binding?.branch ?? null,
+            worktreePath: binding?.path ?? null,
+          };
+        }),
+      },
     };
   });
 
@@ -100,9 +104,12 @@ export const make = Effect.gen(function* () {
     const [row] = yield* sql<{ revision: number; body: string }>`
       SELECT revision, body FROM matteos_boards WHERE project_id = ${projectId}
         AND (${associatedThread ?? null} IS NULL OR instr(body, json_quote(${associatedThread ?? ""})) > 0)`;
-    if (!row) return { revision: 0, board: emptyMatteBoard };
+    if (!row) {
+      const empty: MatteBoardSnapshot = { revision: 0, board: emptyMatteBoard };
+      return empty;
+    }
     const board = yield* decodeBoard(row.body);
-    return { revision: row.revision, board: yield* resolveThreads(projectId, board, false) };
+    return { revision: row.revision, ...(yield* resolveThreads(projectId, board, false)) };
   }, Effect.mapError(storageFailure));
 
   const requireProject = Effect.fn("MatteBoard.requireProject")(function* (projectId: ProjectId) {
@@ -132,7 +139,7 @@ export const make = Effect.gen(function* () {
       return yield* failure("Un task o una conversazione compare due volte.");
     }
     const persist = Effect.gen(function* () {
-      const board = yield* resolveThreads(input.projectId, input.board, true);
+      const resolved = yield* resolveThreads(input.projectId, input.board, true);
       const changed =
         input.revision === 0
           ? yield* sql`INSERT INTO matteos_boards(project_id, revision, body)
@@ -146,7 +153,7 @@ export const make = Effect.gen(function* () {
         return yield* failure(
           "La roadmap è cambiata in un’altra finestra. Rivedi la versione aggiornata e riprova.",
         );
-      return { revision: input.revision + 1, board } satisfies MatteBoardSnapshot;
+      return { revision: input.revision + 1, ...resolved } satisfies MatteBoardSnapshot;
     });
     return yield* sql
       .withTransaction(persist)
@@ -200,6 +207,19 @@ export const make = Effect.gen(function* () {
     const [winner] = yield* lookup.pipe(Effect.mapError(storageFailure));
     return winner?.context ?? null;
   });
-  return { read, write, contextFor };
+  const taskLink = Effect.fn("MatteBoard.taskLink")(function* (
+    projectId: ProjectId,
+    threadId: ThreadId,
+  ) {
+    const [link] = yield* sql<{ id: string; title: string }>`
+      SELECT task.value ->> 'id' AS id, task.value ->> 'title' AS title
+      FROM matteos_boards b, json_each(b.body, '$.tasks') task, json_each(task.value, '$.threadIds') thread
+      WHERE b.project_id = ${projectId} AND thread.value = ${threadId}
+      AND NOT EXISTS (SELECT 1 FROM orchestration_v2_projection_threads p
+        WHERE p.thread_id = ${threadId} AND (p.project_id != ${projectId} OR p.deleted_at IS NOT NULL))
+      LIMIT 1`.pipe(Effect.mapError(storageFailure));
+    return link ?? null;
+  });
+  return { read, write, contextFor, taskLink };
 });
 export const contextLayer = Layer.effect(BoardContext, make);

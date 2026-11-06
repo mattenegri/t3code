@@ -11,9 +11,10 @@ import {
   PanelRightCloseIcon,
   PanelRightOpenIcon,
 } from "lucide-react";
-import type { MatteBoard, MatteBoardSnapshot, ThreadId } from "@t3tools/contracts";
+import { AuthOrchestrationReadScope, type MatteBoard } from "@t3tools/contracts";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
 import { useProjects, useThreadShellsForProjectRefs } from "../state/entities";
+import { useEnvironmentScope } from "../state/session";
 import { useEnvironmentQuery } from "../state/query";
 import { useAtomCommand } from "../state/use-atom-command";
 import { vcsEnvironment } from "../state/vcs";
@@ -23,18 +24,23 @@ import { observeResize } from "../lib/observeResize";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { SidebarInset } from "../components/ui/sidebar";
 import { Button } from "../components/ui/button";
-import { Conversation, type ConversationDraft } from "./Conversation";
+import { Conversation } from "./Conversation";
 import { ProjectNoteEditor, TaskCollection, TaskDetail, type Save } from "./Board";
-import { readBoard, saveBoard } from "./atoms";
+import { scopedProjectKey } from "@t3tools/client-runtime/environment";
+import { lastBoardWrite, readBoard, saveBoard } from "./atoms";
 import { Choice } from "./controls";
 
 export function MatteWorkspace({
   projectId,
   environmentId,
   chooseProject,
+  taskId,
+  chooseTask,
 }: {
   projectId: string | undefined;
   environmentId: string | undefined;
+  taskId: string | undefined;
+  chooseTask: (env: string, project: string, task: string | null) => void;
   chooseProject: (env: string, project: string) => void;
 }) {
   const projects = useProjects().filter((p) => !p.archivedAt);
@@ -99,7 +105,7 @@ export function MatteWorkspace({
               ) : (
                 <PanelRightOpenIcon />
               )}
-              {chatOpen && !split ? "Task" : "Chat"}
+              {chatOpen && !split ? "Task" : "Chat roadmap"}
             </Button>
           </div>
         )}
@@ -111,7 +117,8 @@ export function MatteWorkspace({
           split={split}
           chatOpen={chatOpen}
           chatId={chatId}
-          openChat={() => setChatOpen(true)}
+          taskId={taskId}
+          setTaskId={(id) => chooseTask(project.environmentId, project.id, id)}
         />
       ) : (
         <p className="p-5 text-sm text-muted-foreground">
@@ -129,25 +136,37 @@ function ProjectBoard({
   split,
   chatOpen,
   chatId,
-  openChat,
+  taskId,
+  setTaskId,
 }: {
   project: EnvironmentProject;
   split: boolean;
   chatOpen: boolean;
   chatId: string;
-  openChat: () => void;
+  taskId: string | undefined;
+  setTaskId: (task: string | null) => void;
 }) {
   const projectRef = { environmentId: project.environmentId, projectId: project.id };
+  const canRead = useEnvironmentScope(project.environmentId, AuthOrchestrationReadScope);
   const server = useEnvironmentQuery(
-    readBoard({ environmentId: project.environmentId, input: { projectId: project.id } }),
+    canRead
+      ? readBoard({ environmentId: project.environmentId, input: { projectId: project.id } })
+      : null,
   );
   const shells = useThreadShellsForProjectRefs([projectRef]);
   const write = useAtomCommand(saveBoard, { reportFailure: false });
   const writable = useAtomValue(saveBoard.permissionAtom(project.environmentId));
-  const [local, setLocal] = useState<MatteBoardSnapshot | null>(null);
-  const snapshot = local && local.revision > (server.data?.revision ?? -1) ? local : server.data;
+  const local = useAtomValue(lastBoardWrite(scopedProjectKey(projectRef)));
+  const snapshot = !canRead
+    ? null
+    : local && server.data && local.revision > server.data.revision
+      ? local
+      : server.data;
   const rootStatus = useEnvironmentQuery(
-    snapshot?.board.tasks.some((t) => t.workspace === "root" && t.threadIds.length > 0)
+    snapshot?.board.tasks.some(
+      (t) =>
+        (t.id === taskId && !t.worktreePath) || (t.workspace === "root" && t.threadIds.length > 0),
+    )
       ? vcsEnvironment.status({
           environmentId: project.environmentId,
           input: { cwd: project.workspaceRoot },
@@ -159,14 +178,6 @@ function ProjectBoard({
   const [error, setError] = useState("");
   const [list, setList] = useState(false);
   const [section, setSection] = useState<"tasks" | "roadmap" | "context">("tasks");
-  const [taskId, setTaskId] = useState<string | null>(null);
-  const [drafts] = useState(() => new Map<string | null, ConversationDraft>());
-  const [chat, setChat] = useState<{
-    taskId: string | null;
-    id: ThreadId | null;
-    fresh: boolean;
-    key: number;
-  }>({ taskId: null, id: null, fresh: false, key: 0 });
   const save: Save = async (board: MatteBoard, version?: number) => {
     if (!snapshot || !writable || inFlight.current) return false;
     inFlight.current = true;
@@ -183,7 +194,7 @@ function ProjectBoard({
               ? String(Cause.squash(result.cause))
               : "Salvataggio interrotto.",
           );
-        setLocal(result.value);
+
         return true;
       })
       .catch((error: unknown) => {
@@ -198,7 +209,9 @@ function ProjectBoard({
   if (!snapshot)
     return (
       <div role="status" className="p-4 text-sm text-muted-foreground">
-        {server.error ?? "Caricamento della roadmap…"}
+        {!canRead
+          ? "Servono i permessi di lettura per aprire la roadmap."
+          : (server.error ?? "Caricamento della roadmap…")}
         {server.error && (
           <Button variant="ghost" onClick={server.refresh}>
             Riprova
@@ -208,22 +221,6 @@ function ProjectBoard({
     );
   const { board, revision } = snapshot;
   const selected = board.tasks.find((t) => t.id === taskId);
-  const taskForChat = board.tasks.find((t) => t.id === chat.taskId) ?? null;
-  const shownId = taskForChat
-    ? chat.fresh
-      ? null
-      : chat.id && taskForChat.threadIds.includes(chat.id)
-        ? chat.id
-        : (taskForChat.threadIds[0] ?? null)
-    : board.projectThreadId;
-  const switchChat = (taskId: string | null, id: ThreadId | null, fresh: boolean) => {
-    setChat((c) =>
-      c.taskId === taskId && c.id === id && c.fresh === fresh
-        ? c
-        : { taskId, id, fresh, key: c.key + 1 },
-    );
-    openChat();
-  };
   const props = { board, revision, save, disabled: saving || !writable };
   const titles = new Map(shells.map((s) => [s.id, s.title]));
   const shownTasks = board.tasks.map((t) => {
@@ -302,11 +299,11 @@ function ProjectBoard({
               key={field}
               {...props}
               field={field}
-              active={section === field}
+              active={!selected && section === field}
               close={() => setSection((current) => (current === field ? "tasks" : current))}
             />
           ))}
-          {section === "tasks" &&
+          {(selected || section === "tasks") &&
             (selected ? (
               <TaskDetail
                 key={selected.id}
@@ -314,8 +311,9 @@ function ProjectBoard({
                 task={shownTasks.find((t) => t.id === selected.id) ?? selected}
                 titles={titles}
                 close={() => setTaskId(null)}
-                openChat={(id) => switchChat(selected.id, id, false)}
-                newChat={() => switchChat(selected.id, null, true)}
+                project={project}
+                pendingThreadIds={snapshot.pendingThreadIds ?? []}
+                canUseWorktree={!project.isScratch && rootStatus.data?.isRepo !== false}
               />
             ) : (
               <TaskCollection
@@ -336,23 +334,12 @@ function ProjectBoard({
           }
         >
           <Conversation
-            key={JSON.stringify([chat.key, taskForChat?.id ?? null])}
             project={project}
             board={board}
-            task={taskForChat}
-            threadId={shownId}
-            isNew={taskForChat ? chat.fresh : false}
             visible={chatOpen}
-            drafts={drafts}
             shells={shells}
             save={save}
             disabled={props.disabled}
-            onOpen={(id) =>
-              setChat((current) =>
-                current.key === chat.key ? { ...current, id, fresh: false } : current,
-              )
-            }
-            onProject={() => switchChat(null, null, false)}
           />
         </aside>
       </div>

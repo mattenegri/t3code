@@ -21,12 +21,17 @@ export const MatteBoard = Schema.Struct({
   tasks: Schema.Array(MatteTask).check(Schema.isMaxLength(300)),
 });
 export type MatteBoard = typeof MatteBoard.Type;
-export const MatteBoardSnapshot = Schema.Struct({ revision: NonNegativeInt, board: MatteBoard });
+export const MatteBoardSnapshot = Schema.Struct({
+  revision: NonNegativeInt,
+  board: MatteBoard,
+  pendingThreadIds: Schema.optional(Schema.Array(ThreadId)),
+});
 export type MatteBoardSnapshot = typeof MatteBoardSnapshot.Type;
 export const MatteBoardRead = Schema.Struct({ projectId: ProjectId });
 export const MatteBoardWrite = Schema.Struct({
   ...MatteBoardRead.fields,
-  ...MatteBoardSnapshot.fields,
+  revision: NonNegativeInt,
+  board: MatteBoard,
 });
 export type MatteBoardWrite = typeof MatteBoardWrite.Type;
 export const emptyMatteBoard: MatteBoard = {

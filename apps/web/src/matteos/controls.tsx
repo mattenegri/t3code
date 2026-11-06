@@ -23,12 +23,14 @@ export function Choice({
   items,
   onChange,
   disabled = false,
+  compact = false,
 }: {
   label: string;
   value: string;
   items: ReadonlyArray<{ value: string; label: string }>;
   onChange: (value: string) => void;
   disabled?: boolean;
+  compact?: boolean;
 }) {
   return (
     <Select
@@ -39,7 +41,12 @@ export function Choice({
         if (v !== null) onChange(v);
       }}
     >
-      <SelectTrigger className="min-w-0" aria-label={label} size="sm">
+      <SelectTrigger
+        className="min-w-0"
+        aria-label={label}
+        variant={compact ? "ghost" : "default"}
+        size={compact ? "compact" : "sm"}
+      >
         <SelectValue />
       </SelectTrigger>
       <SelectPopup>

@@ -1,3 +1,5 @@
+import { TaskDraftHeading } from "../matteos/TaskLink";
+import { isTaskDraft } from "../matteos/taskDraft";
 import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
@@ -1256,7 +1258,9 @@ export default function ChatView(props: ChatViewProps) {
     advertisedFileAttachmentBytes === null
       ? null
       : clampFileAttachmentUploadBytes(advertisedFileAttachmentBytes);
-  const envLocked = Boolean(activeThread && (activeMessageCount > 0 || activeRuntime !== null));
+  const envLocked =
+    isTaskDraft(draftId) ||
+    Boolean(activeThread && (activeMessageCount > 0 || activeRuntime !== null));
   // onEnvironmentChange only retargets an unsent draft. envLocked alone does not
   // rule out a started thread: one whose machine is offline never loads its
   // messages, so it would otherwise be offered a machine picker that does nothing.
@@ -3563,11 +3567,19 @@ export default function ChatView(props: ChatViewProps) {
                             : undefined
                         }
                       >
-                        <DraftHeroHeadline
-                          draftId={draftId}
-                          activeProjectRef={activeProjectRef}
-                          activeProjectTitle={activeProject?.title ?? null}
-                        />
+                        {isTaskDraft(draftId) ? (
+                          <TaskDraftHeading
+                            environmentId={activeThread.environmentId}
+                            projectId={activeThread.projectId}
+                            threadId={activeThread.id}
+                          />
+                        ) : (
+                          <DraftHeroHeadline
+                            draftId={draftId}
+                            activeProjectRef={activeProjectRef}
+                            activeProjectTitle={activeProject?.title ?? null}
+                          />
+                        )}
                       </div>
                     </div>
                   ) : null}
@@ -3618,6 +3630,7 @@ export default function ChatView(props: ChatViewProps) {
                                 reportedModelSelection={reportedModelSelection}
                                 multipleModelSelections={multipleModelSelections}
                                 supportsMultipleModels={
+                                  !isTaskDraft(draftId) &&
                                   serverConfig?.environment.capabilities
                                     .requiredWorktreeBootstrap === true
                                 }

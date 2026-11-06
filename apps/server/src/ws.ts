@@ -2897,6 +2897,8 @@ export const layerWsRpc = (
               (cause) => new OrchestrationDispatchCommandError({ message: cause.message, cause }),
             ),
           ),
+        [WS_METHODS.matteTaskLink]: ({ projectId, threadId }) =>
+          matteBoards.taskLink(projectId, threadId),
         [WS_METHODS.matteBoardRead]: ({ projectId }) => matteBoards.read(projectId),
         [WS_METHODS.matteBoardWrite]: (input) => matteBoards.write(input),
         [WS_METHODS.projectsCreateNew]: (input) =>

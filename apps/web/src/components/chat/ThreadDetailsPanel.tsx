@@ -17,6 +17,7 @@ import ProjectScriptsControl, {
   type ProjectScriptActionResult,
 } from "../ProjectScriptsControl";
 import { memo, useState, type ComponentProps } from "react";
+import { TaskLink } from "../../matteos/TaskLink";
 import { ThreadDetailsCard } from "./ThreadDetailsCard";
 import { OpenInPicker } from "./OpenInPicker";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
@@ -162,6 +163,11 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
         return (
           <>
             <div className="group/details-items">
+              <TaskLink
+                environmentId={props.environmentId}
+                projectId={props.projectId}
+                threadId={props.threadId}
+              />
               {show.environment || show.openIn || show.scripts ? (
                 <ThreadDetailsSection
                   headingId="thread-details-workspace-heading"

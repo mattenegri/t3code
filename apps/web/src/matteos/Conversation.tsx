@@ -5,13 +5,7 @@ import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { useEnvironmentThread } from "../state/threads";
 import { ArrowUpIcon, ExternalLinkIcon, MessageSquareIcon } from "lucide-react";
-import {
-  CommandId,
-  type MatteBoard,
-  type MatteTask,
-  type ModelSelection,
-  type ThreadId,
-} from "@t3tools/contracts";
+import { CommandId, type MatteBoard, type ModelSelection, type ThreadId } from "@t3tools/contracts";
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
@@ -33,50 +27,35 @@ import { launchChat } from "./atoms";
 import { Choice } from "./controls";
 import type { Save } from "./Board";
 
-export interface ConversationDraft {
+interface ConversationDraft {
   prompt: string;
   modelKey: string;
-  workspace: MatteTask["workspace"] | null;
 }
-const emptyDraft: ConversationDraft = { prompt: "", modelKey: "", workspace: null };
+const emptyDraft: ConversationDraft = { prompt: "", modelKey: "" };
 
 export function Conversation({
   project,
   board,
-  task,
-  threadId,
-  isNew,
   shells,
   save,
-  onOpen,
-  onProject,
   disabled,
   visible,
-  drafts,
 }: {
   project: EnvironmentProject;
   board: MatteBoard;
-  task: MatteTask | null;
-  threadId: ThreadId | null;
-  isNew: boolean;
   shells: ReadonlyArray<EnvironmentThreadShell>;
   save: Save;
-  onOpen: (id: ThreadId) => void;
-  onProject: () => void;
   disabled: boolean;
   visible: boolean;
-  drafts: Map<string | null, ConversationDraft>;
 }) {
   const config = useAtomValue(serverEnvironment.configValueAtom(project.environmentId));
   const launch = useAtomCommand(launchChat, { reportFailure: false });
   const canLaunch = useAtomValue(launchChat.permissionAtom(project.environmentId));
-  const scope = task?.id ?? null;
-  const [draft, setDraft] = useState(() => drafts.get(scope) ?? emptyDraft);
+  const threadId = board.projectThreadId;
+  const [draft, setDraft] = useState(emptyDraft);
   const { prompt, modelKey } = draft;
-  const workspace = project.isScratch ? "root" : (draft.workspace ?? task?.workspace ?? "worktree");
   const editDraft = (patch: Partial<ConversationDraft>) => {
     const next = { ...draft, ...patch };
-    drafts.set(scope, next);
     setDraft(next);
   };
   const [busy, setBusy] = useState(false),
@@ -85,9 +64,8 @@ export function Conversation({
   const reserved = useRef<ThreadId | null>(null);
   const [accepted, setAccepted] = useState<ThreadId | null>(null);
   const ownShell = shells.find((s) => s.id === threadId);
-  const detail = useEnvironmentThread(project.environmentId, !isNew && !ownShell ? threadId : null);
+  const detail = useEnvironmentThread(project.environmentId, !ownShell ? threadId : null);
   const knownThread =
-    !isNew &&
     threadId !== null &&
     (ownShell !== undefined ||
       Option.exists(
@@ -119,36 +97,15 @@ export function Conversation({
         o.selection.instanceId === fallback?.instanceId && o.selection.model === fallback?.model,
     ) ??
     options[0];
-  const primary = task?.threadIds[0];
-  const primaryShell = shells.find((s) => s.id === primary);
-  const path = primaryShell ? primaryShell.worktreePath : primary ? task?.worktreePath : null;
-  const branch = primaryShell?.worktreePath ? primaryShell.branch : task?.branch;
-  const firstWorkspace = task?.threadIds.length ? task.workspace : workspace;
   const launchFirst = async () => {
     if (pending.current || disabled || !prompt.trim() || !model || !settings || !canLaunch) return;
     pending.current = true;
     setBusy(true);
     setFailure("");
     const send = async () => {
-      const id = reserved.current ?? (!isNew ? threadId : null) ?? newThreadId();
+      const id = reserved.current ?? threadId ?? newThreadId();
       reserved.current = id;
-      if (task && primary && id !== primary && task.workspace === "worktree" && !path)
-        throw new Error(
-          "Attendi la preparazione del primo worktree prima di aprire un’altra conversazione.",
-        );
-      if (task && !task.threadIds.includes(id)) {
-        if (
-          !(await save({
-            ...board,
-            tasks: board.tasks.map((t) =>
-              t.id === task.id
-                ? { ...t, workspace: firstWorkspace, threadIds: [...t.threadIds, id] }
-                : t,
-            ),
-          }))
-        )
-          return;
-      } else if (!task && board.projectThreadId !== id) {
+      if (board.projectThreadId !== id) {
         if (board.projectThreadId)
           throw new Error("La chat di progetto è già stata aperta. Riaprila dalla roadmap.");
         if (!(await save({ ...board, projectThreadId: id }))) return;
@@ -159,20 +116,12 @@ export function Conversation({
           commandId: CommandId.make("matteos-launch-" + id),
           threadId: id,
           projectId: project.id,
-          title: task
-            ? prompt.trim().split("\n", 1)[0]?.slice(0, 80).trimEnd() || task.title
-            : "Roadmap",
+          title: "Roadmap",
           generateTitle: false,
           modelSelection: model.selection,
           runtimeMode: settings.defaultRuntimeMode,
-          interactionMode: task ? "default" : "plan",
-          workspaceStrategy: !task
-            ? { type: "root" }
-            : path
-              ? { type: "existing_worktree", worktreePath: path, ...(branch ? { branch } : {}) }
-              : firstWorkspace === "worktree"
-                ? { type: "worktree", baseRef: "HEAD" }
-                : { type: "root" },
+          interactionMode: "plan",
+          workspaceStrategy: { type: "root" },
           initialMessage: { text: prompt.trim(), attachments: [] },
         },
       });
@@ -184,11 +133,7 @@ export function Conversation({
         );
       reserved.current = null;
       setAccepted(id);
-      if (drafts.get(scope) === draft) {
-        drafts.delete(scope);
-        setDraft(emptyDraft);
-      }
-      onOpen(id);
+      setDraft(emptyDraft);
     };
     await send()
       .catch((error: unknown) => {
@@ -204,14 +149,7 @@ export function Conversation({
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       <header className="flex min-h-12 items-center gap-2 border-b border-border px-4">
         <MessageSquareIcon className="size-4 shrink-0 text-muted-foreground" />
-        <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">
-          {task ? ownShell?.title || task.title : "Chat di progetto"}
-        </h2>
-        {task && (
-          <Button variant="ghost-muted" size="xs" onClick={onProject}>
-            Chat di progetto
-          </Button>
-        )}
+        <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">Chat di progetto</h2>
         {knownThread && threadId && (
           <Button
             variant="ghost-muted"
@@ -251,16 +189,12 @@ export function Conversation({
           }}
         >
           <label className="grid gap-2 text-sm text-muted-foreground">
-            {task ? "Conversazione del task" : "Roadmap e task inclusi nel contesto"}
+            Roadmap e task inclusi nel contesto
             <Textarea
               disabled={busy}
               rows={3}
               aria-label="Messaggio"
-              placeholder={
-                task
-                  ? "Chiedi di valutare o implementare il task…"
-                  : "Chiedi da quale task partire…"
-              }
+              placeholder="Chiedi da quale task partire…"
               value={prompt}
               onChange={(e) => editDraft({ prompt: e.target.value })}
               onKeyDown={(e) => {
@@ -289,18 +223,6 @@ export function Conversation({
                 value={model.key}
                 items={options.map((m) => ({ label: m.label, value: m.key }))}
                 onChange={(modelKey) => editDraft({ modelKey })}
-              />
-            )}
-            {task && !primary && !project.isScratch && (
-              <Choice
-                disabled={busy}
-                label="Spazio di lavoro"
-                value={workspace}
-                items={[
-                  { value: "worktree", label: "Nuovo worktree" },
-                  { value: "root", label: "Checkout del progetto" },
-                ]}
-                onChange={(v) => editDraft({ workspace: v === "root" ? "root" : "worktree" })}
               />
             )}
             <div className="ml-auto">

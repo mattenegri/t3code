@@ -60,6 +60,7 @@ export const RPC_REQUIRED_SCOPES = {
   [ORCHESTRATION_V2_WS_METHODS.subscribeShell]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.subscribeThread]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.subscribeCommandOutput]: AuthOrchestrationReadScope,
+  [WS_METHODS.matteTaskLink]: AuthOrchestrationReadScope,
   [WS_METHODS.matteBoardRead]: AuthOrchestrationReadScope,
   [WS_METHODS.matteBoardWrite]: AuthOrchestrationOperateScope,
   [WS_METHODS.projectsMutate]: AuthOrchestrationOperateScope,

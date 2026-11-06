@@ -1,7 +1,9 @@
 import { useId, useRef, useState } from "react";
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
-import { randomUUID } from "../lib/utils";
-import { ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon, PlusIcon } from "lucide-react";
+import { TaskConversations } from "./TaskConversations";
+import { NewTaskDialog } from "./NewTaskDialog";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
+import { ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon } from "lucide-react";
 import type { MatteBoard, MatteTask, MatteTaskStatus, ThreadId } from "@t3tools/contracts";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -53,7 +55,6 @@ export function TaskCollection({
   openTask: (id: string) => void;
   list: boolean;
 }) {
-  const [title, setTitle] = useState("");
   const [over, setOver] = useState<MatteTaskStatus | null>(null);
   const updateStatus = (id: string, status: MatteTaskStatus) => {
     const task = board.tasks.find((t) => t.id === id);
@@ -62,45 +63,7 @@ export function TaskCollection({
   };
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
-      <form
-        className="flex items-center gap-2"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const value = title.trim();
-          if (!value || disabled) return;
-          const task: MatteTask = {
-            id: randomUUID(),
-            title: value,
-            notes: "",
-            status: "todo",
-            workspace: "worktree",
-            branch: null,
-            worktreePath: null,
-            threadIds: [],
-          };
-          if (await save({ ...board, tasks: [...board.tasks, task] }))
-            setTitle((current) => (current.trim() === value ? "" : current));
-        }}
-      >
-        <div className="min-w-0 flex-1">
-          <Input
-            readOnly={disabled}
-            placeholder="Aggiungi un task…"
-            aria-label="Nome del nuovo task"
-            maxLength={240}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </div>
-        <Button
-          type="submit"
-          size="icon"
-          aria-label="Aggiungi task"
-          disabled={!title.trim() || disabled}
-        >
-          <PlusIcon />
-        </Button>
-      </form>
+      <NewTaskDialog board={board} disabled={disabled} save={save} openTask={openTask} />
       {list ? (
         <div className="min-h-0 overflow-y-auto">
           {board.tasks.length === 0 ? (
@@ -325,14 +288,16 @@ export function TaskDetail({
   save,
   disabled,
   close,
-  openChat,
-  newChat,
+  project,
+  pendingThreadIds,
+  canUseWorktree,
   titles,
 }: PanelProps & {
   task: MatteTask;
   close: () => void;
-  openChat: (id: ThreadId) => void;
-  newChat: () => void;
+  project: EnvironmentProject;
+  pendingThreadIds: readonly ThreadId[];
+  canUseWorktree: boolean;
   titles: ReadonlyMap<ThreadId, string>;
 }) {
   const [editing, setEditing] = useState(false);
@@ -352,7 +317,7 @@ export function TaskDetail({
   };
   const index = board.tasks.findIndex((t) => t.id === task.id);
   return (
-    <div className="grid content-start gap-4 overflow-y-auto">
+    <div className="mx-auto grid w-full max-w-3xl content-start gap-5 overflow-y-auto px-1 py-1 sm:px-4">
       <div>
         <Button variant="ghost" size="sm" onClick={close}>
           <ArrowLeftIcon />
@@ -368,9 +333,11 @@ export function TaskDetail({
           close={() => setEditing(false)}
         />
       ) : (
-        <div className="grid gap-2">
+        <div className="grid gap-3">
           <div className="flex items-start justify-between gap-2">
-            <h2 className="break-words text-xl font-semibold">{task.title}</h2>
+            <h2 className="min-w-0 break-words text-2xl font-semibold tracking-tight">
+              {task.title}
+            </h2>
             <Button
               variant="ghost-muted"
               size="sm"
@@ -380,21 +347,43 @@ export function TaskDetail({
               Modifica
             </Button>
           </div>
-          {task.notes && <p className="whitespace-pre-wrap break-words text-sm">{task.notes}</p>}
-          <WorkspaceLabel branch={task.branch} path={task.worktreePath} interactive />
+          <section className="grid gap-2">
+            <h3 className="text-sm font-medium">Descrizione</h3>
+            {task.notes.trim() ? (
+              <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+                {task.notes}
+              </p>
+            ) : disabled ? (
+              <p className="text-sm text-muted-foreground">Nessuna descrizione.</p>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="w-full rounded-md border border-dashed border-border px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted/40 focus-visible:outline-ring"
+              >
+                Aggiungi una descrizione…
+              </button>
+            )}
+          </section>
         </div>
       )}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <Choice
-          label="Stato del task"
-          items={stages}
-          value={task.status}
-          disabled={disabled}
-          onChange={(status) => {
-            const s = stages.find((i) => i.value === status);
-            if (s) void update({ status: s.value });
-          }}
-        />
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-muted/40 px-2 py-1.5">
+        <div className="flex items-center gap-1">
+          <span
+            className={"size-2 rounded-full " + stages.find((s) => s.value === task.status)?.dot}
+          />
+          <Choice
+            compact
+            label="Stato del task"
+            items={stages}
+            value={task.status}
+            disabled={disabled}
+            onChange={(status) => {
+              const s = stages.find((i) => i.value === status);
+              if (s) void update({ status: s.value });
+            }}
+          />
+        </div>
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
           Priorità {index + 1}
           <Button
@@ -417,22 +406,26 @@ export function TaskDetail({
           </Button>
         </div>
       </div>
-      <section className="grid gap-2 border-t border-border pt-4">
-        <h3 className="text-sm font-medium">Conversazioni</h3>
-        {task.threadIds.map((id, i) => (
-          <Button key={id} variant="outline" size="sm" onClick={() => openChat(id)}>
-            {titles.get(id) && titles.get(id) !== task.title
-              ? titles.get(id)
-              : "Conversazione " + (i + 1)}
-          </Button>
-        ))}
-        <div>
-          <Button variant="secondary" size="sm" disabled={disabled} onClick={newChat}>
-            <PlusIcon />
-            Nuova conversazione
-          </Button>
-        </div>
-      </section>
+      <div className="grid gap-1 text-xs text-muted-foreground">
+        <h3 className="text-sm font-medium text-foreground">Spazio di lavoro</h3>
+        <WorkspaceLabel branch={task.branch} path={task.worktreePath} interactive />
+        {!task.worktreePath && (
+          <span>
+            {!canUseWorktree || task.workspace === "root"
+              ? "Checkout del progetto · " + project.workspaceRoot
+              : "Il worktree verrà creato al primo messaggio."}
+          </span>
+        )}
+      </div>
+      <TaskConversations
+        project={project}
+        canUseWorktree={canUseWorktree}
+        task={task}
+        pendingThreadIds={pendingThreadIds}
+        titles={titles}
+        disabled={disabled}
+        update={update}
+      />
       <div className="mt-3">
         <Button
           variant="ghost-muted"
@@ -493,15 +486,18 @@ function TaskEditor({
         onChange={(e) => title.change(e.target.value)}
       />
       <EditConflict field={title} label="Il titolo" />
-      <Textarea
-        readOnly={disabled}
-        aria-label="Dettagli del task"
-        rows={5}
-        maxLength={6000}
-        value={notes.value}
-        onChange={(e) => notes.change(e.target.value)}
-      />
-      <EditConflict field={notes} label="Il testo del task" />
+      <label className="grid gap-1.5 text-sm font-medium">
+        Descrizione
+        <Textarea
+          readOnly={disabled}
+          placeholder="Descrivi il lavoro da fare e il risultato atteso…"
+          rows={5}
+          maxLength={6000}
+          value={notes.value}
+          onChange={(e) => notes.change(e.target.value)}
+        />
+      </label>
+      <EditConflict field={notes} label="La descrizione" />
       <div className="flex gap-2">
         <Button type="submit" disabled={blocked}>
           Salva

@@ -38,7 +38,7 @@ import { MatteBoardRead, MatteBoardWrite, MatteBoardSnapshot } from "./matteBoar
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
-import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { NonNegativeInt, ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
   ProviderAuthCancelInput,
   ProviderAuthCompleteInput,
@@ -416,6 +416,7 @@ export const WS_METHODS = {
   projectsWriteFile: "projects.writeFile",
   projectsMutate: "projects.mutate",
   projectsEnsureScratch: "projects.ensureScratch",
+  matteTaskLink: "matteos.taskLink",
   matteBoardRead: "matteos.readBoard",
   matteBoardWrite: "matteos.writeBoard",
   projectsCreateNew: "projects.createNew",
@@ -1351,6 +1352,11 @@ const WsProjectsEnsureScratchRpc = Rpc.make(WS_METHODS.projectsEnsureScratch, {
   error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
 });
 
+const WsMatteTaskLinkRpc = Rpc.make(WS_METHODS.matteTaskLink, {
+  payload: Schema.Struct({ projectId: ProjectId, threadId: ThreadId }),
+  success: Schema.NullOr(Schema.Struct({ id: Schema.String, title: Schema.String })),
+  error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
+});
 const WsMatteBoardReadRpc = Rpc.make(WS_METHODS.matteBoardRead, {
   payload: MatteBoardRead,
   success: MatteBoardSnapshot,
@@ -2135,6 +2141,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsSearchContentsRpc,
   WsProjectsSearchEntriesRpc,
   WsProjectsEnsureScratchRpc,
+  WsMatteTaskLinkRpc,
   WsMatteBoardReadRpc,
   WsMatteBoardWriteRpc,
   WsProjectsCreateNewRpc,

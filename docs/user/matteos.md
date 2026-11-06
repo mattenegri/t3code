@@ -2,13 +2,15 @@
 
 Apri **Task** nella barra laterale di T3 e scegli il progetto. Kanban e Lista mostrano gli stessi task. La lista segue la priorità della roadmap. Dal dettaglio puoi cambiare la priorità, mentre trascinare una scheda fra colonne modifica il suo stato.
 
-Per concentrarti sulla Kanban puoi chiudere la sidebar a sinistra e la chat a destra, indipendentemente. Su desktop **Chat** ricorda la tua scelta; se lo spazio è poco, alterna task e conversazione senza perdere la bozza.
+Per concentrarti sulla Kanban puoi chiudere la sidebar a sinistra e la chat a destra, indipendentemente. Su desktop **Chat roadmap** ricorda la tua scelta; se lo spazio è poco, alterna task e conversazione senza perdere la bozza.
 
 **Contesto** conserva scopo, decisioni e vincoli del progetto. Puoi scrivere direttamente oppure usare **Aggiungi da file** per accodare testo o Markdown alla bozza. Rivedi il contenuto e premi **Salva** per condividerlo con la chat di progetto e con le chat dei task. Il testo che avevi salvato sotto **Roadmap** nel fork si trova già qui. Per recuperare appunti dal vecchio matteOS, seleziona i file che vuoi condividere.
 
 **Roadmap** raccoglie obiettivi e prossimi passi. La chat a fianco riceve roadmap, contesto e tutti i task nell’ordine scelto a ogni turno ordinario. Chiedile di valutare priorità, dipendenze e attività da svolgere in parallelo. Puoi rivedere le proposte nella conversazione e aggiornare la roadmap o i task. Se un’altra finestra modifica lo stesso campo mentre scrivi, puoi confrontare il testo salvato con la tua bozza prima di scegliere.
 
-Dentro un task, **Nuova conversazione** apre un thread T3. Al primo messaggio scegli il checkout del progetto o un worktree dedicato. Le conversazioni successive usano lo stesso spazio di lavoro. Passa sul contrassegno **Worktree** della scheda o selezionalo nel dettaglio del task per leggere il percorso. L’icona di apertura accanto al titolo della chat apre il thread nella vista completa di T3, con diff, terminale e verifiche. Eliminare il task conserva le conversazioni e i file del worktree.
+Da Kanban o Lista scegli **Nuovo task**. Scrivi un titolo e, in **Descrizione**, l’obiettivo, i vincoli o i criteri di riuscita. Puoi scegliere lo stato iniziale e creare il task con **⌘ Invio** su Mac o **Ctrl Invio**. La descrizione compare sotto il titolo del task e si può modificare anche dopo: ogni conversazione collegata riceve il testo salvato, insieme a roadmap e contesto del progetto.
+
+Nel dettaglio del task scegli il checkout o un worktree dedicato prima di aprire **Nuova conversazione**. Scrivi il primo messaggio nella normale chat T3. Le altre conversazioni del task potranno usare lo stesso worktree quando sarà pronto. Il dettaglio mostra branch, percorso del worktree e conversazioni; puoi riaprire una bozza da qui o ritrovare un thread nella barra sinistra. Nel pannello delle informazioni del thread, il link **Task** riapre il dettaglio. La chat a destra della board rimane dedicata alla roadmap. Eliminare il task conserva i thread avviati e i file del worktree.
 
 ## Dove conservare le informazioni private
 

@@ -1,3 +1,4 @@
+import { useComposerDraftStore } from "../composerDraftStore";
 import { createMemoryHistory } from "@tanstack/react-router";
 import {
   type MatteBoardSnapshot,
@@ -6,6 +7,7 @@ import {
   WS_METHODS,
   ORCHESTRATION_V2_WS_METHODS,
   type OrchestrationV2ThreadLaunchInput,
+  type ThreadId,
 } from "@t3tools/contracts";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import type * as Context from "effect/Context";
@@ -18,12 +20,12 @@ import { AppRoot } from "~/AppRoot";
 import { getRouter } from "~/router";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 import {
+  ENVIRONMENT_ID,
   installFakeEnvironment,
-  projectionOf,
   threadWithHistory,
   type FakeDriver,
 } from "../../test/fakeEnvironment";
-import { act, render } from "../../test/render";
+import { render } from "../../test/render";
 
 vi.mock("../../../../packages/client-runtime/src/connection/driver.ts", async (original) => {
   const [actual, { fakeDriver }, Layer] = await Promise.all([
@@ -98,23 +100,25 @@ it("switches views, retains task conversations and launches another in the same 
     },
   };
   let launch: OrchestrationV2ThreadLaunchInput | undefined;
-  let finishLaunch!: () => void;
-  const response = new Promise<void>((resolve) => {
-    finishLaunch = resolve;
-  });
   using _fixture = installFakeEnvironment([roadmap, first], {
-    [WS_METHODS.matteBoardRead]: () => Effect.succeed(saved),
-    [WS_METHODS.matteBoardWrite]: (input: MatteBoardWrite) => {
-      saved = { revision: input.revision + 1, board: input.board };
-      return Effect.succeed(saved);
-    },
     [ORCHESTRATION_V2_WS_METHODS.launchThread]: (input: OrchestrationV2ThreadLaunchInput) => {
       launch = input;
-      return Effect.promise(async () => {
-        await response;
-        const thread = threadWithHistory(String(input.threadId), 1);
-        return { threadId: thread.id, resumed: false, projection: projectionOf(thread) };
-      });
+      return Effect.never;
+    },
+    [WS_METHODS.matteBoardRead]: () => Effect.succeed(saved),
+    [WS_METHODS.matteBoardWrite]: (input: MatteBoardWrite) => {
+      saved = {
+        revision: input.revision + 1,
+        board: input.board,
+        pendingThreadIds: input.board.tasks.flatMap((t) =>
+          t.threadIds.filter((id) => id !== first.id),
+        ),
+      };
+      return Effect.succeed(saved);
+    },
+    [WS_METHODS.matteTaskLink]: ({ threadId }: { threadId: ThreadId }) => {
+      const linked = saved.board.tasks.find((t) => t.threadIds.includes(threadId));
+      return Effect.succeed(linked ? { id: linked.id, title: linked.title } : null);
     },
   });
   __setClientSettingsForTests({
@@ -163,9 +167,27 @@ it("switches views, retains task conversations and launches another in the same 
   await expect.element(sidebarToggle).toHaveAttribute("aria-pressed", "false");
   await expect.element(composer).toHaveTextContent("Confronta le priorità");
   await sidebarToggle.click();
-  await page.getByRole("textbox", { name: "Nome del nuovo task" }).fill("Verifica colori");
-  await page.getByRole("button", { name: "Aggiungi task", exact: true }).click();
-  await expect.element(page.getByRole("button", { name: /Verifica colori/ })).toBeVisible();
+  await button("Nuovo task").click();
+  await page.getByRole("textbox", { name: "Titolo del task" }).fill("Verifica colori");
+  await page
+    .getByRole("textbox", { name: "Descrizione" })
+    .fill("Verificare il contrasto dei pulsanti.");
+  await button("Crea task").click();
+  await expect.element(page.getByRole("heading", { name: "Verifica colori" })).toBeVisible();
+  await expect
+    .element(page.getByText("Verificare il contrasto dei pulsanti.", { exact: true }))
+    .toBeVisible();
+  await button("Nuova conversazione").click();
+  await expect.element(page.getByTestId("composer-editor")).toBeVisible();
+  const newTask = saved.board.tasks.find((t) => t.title === "Verifica colori")!;
+  const firstDraft = useComposerDraftStore
+    .getState()
+    .getDraftSessionByRef({ environmentId: ENVIRONMENT_ID, threadId: newTask.threadIds[0]! });
+  expect(firstDraft).toMatchObject({ envMode: "worktree", worktreePath: null, branch: "HEAD" });
+  await expect.element(page.getByRole("heading", { name: newTask.title })).toBeVisible();
+  router.history.back();
+  await expect.element(button("Nuova conversazione")).toBeDisabled();
+  await button("Tutti i task").click();
   await page.getByRole("button", { name: "Lista", exact: true }).click();
   await expect.element(page.getByRole("button", { name: /Ricerca nella lista/ })).toBeVisible();
   await page.viewport(1200, 850);
@@ -187,48 +209,46 @@ it("switches views, retains task conversations and launches another in the same 
   await page.getByRole("button", { name: "Mostra percorso del worktree" }).click();
   await expect.element(page.getByText("/worktrees/ricerca", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Mostra percorso del worktree" }).click();
-  await page.getByRole("button", { name: "Analisi del task" }).click();
+  await page.getByRole("link", { name: "Analisi del task" }).click();
   await expect
     .element(page.getByText("Answer 0 for task-analysis.", { exact: false }))
     .toBeVisible();
-  await page.getByRole("button", { name: "Nuova conversazione", exact: true }).click();
-  await page.getByRole("textbox", { name: "Messaggio", exact: true }).fill("Implementa la ricerca");
-  await button("Chat di progetto").click();
-  await expect.element(page.getByRole("heading", { name: "Chat di progetto" })).toBeVisible();
+  await expect.element(page.getByTestId("composer-editor")).toBeVisible();
+  const toggleDetails = button("Toggle thread details panel");
+  const backlink = page.getByRole("link", { name: "Task · Ricerca nella lista" });
+  if (toggleDetails.query()?.getAttribute("aria-pressed") === "false") await toggleDetails.click();
+  await backlink.click();
+  await expect.element(page.getByRole("heading", { name: task.title })).toBeVisible();
   await button("Nuova conversazione").click();
+  await expect.element(page.getByTestId("composer-editor")).toBeVisible();
+  await vi.waitFor(() => expect(router.state.location.pathname).toMatch(/^\/draft\//));
+  const id = saved.board.tasks[0]!.threadIds.at(-1)!;
+  expect(id).not.toBe(first.id);
+  const draft = useComposerDraftStore.getState().getDraftSessionByRef({
+    environmentId: ENVIRONMENT_ID,
+    threadId: id,
+  });
+  expect(draft).toMatchObject({ worktreePath: first.worktreePath, branch: first.branch });
+  await page.getByTestId("composer-editor").fill("Implementa la ricerca");
+  router.history.back();
+  await expect.element(page.getByRole("heading", { name: task.title })).toBeVisible();
+  await page.getByRole("button", { name: /Conversazione 2.*Bozza/ }).click();
   await expect
-    .element(page.getByRole("textbox", { name: "Messaggio", exact: true }))
-    .toHaveValue("Implementa la ricerca");
-  await button("Nascondi chat").click();
-  await expect.element(page.getByRole("heading", { name: "Ricerca nella lista" })).toBeVisible();
-  await button("Mostra chat").click();
-  await expect
-    .element(page.getByRole("textbox", { name: "Messaggio", exact: true }))
-    .toHaveValue("Implementa la ricerca");
-  await page.getByRole("button", { name: "Invia messaggio", exact: true }).click();
+    .element(page.getByTestId("composer-editor"))
+    .toHaveTextContent("Implementa la ricerca");
+  await page.getByTestId("composer-editor").click();
+  await userEvent.keyboard("{Enter}");
   await vi.waitFor(() =>
-    expect(launch?.workspaceStrategy).toEqual({
-      type: "existing_worktree",
-      worktreePath: "/worktrees/ricerca",
-      branch: "feat/ricerca",
+    expect(launch).toMatchObject({
+      threadId: id,
+      initialMessage: { text: "Implementa la ricerca" },
+      workspaceStrategy: {
+        type: "existing_worktree",
+        worktreePath: first.worktreePath,
+        branch: first.branch,
+      },
     }),
   );
-  expect(launch?.title).toBe("Implementa la ricerca");
-  expect(saved.board.tasks[0]?.threadIds).toContain(launch?.threadId);
-  await button("Analisi del task").click();
-  await expect
-    .element(page.getByText("Answer 0 for task-analysis.", { exact: false }))
-    .toBeVisible();
-  await act(async () => {
-    finishLaunch();
-    await response;
-  });
-  await expect
-    .element(page.getByText("Answer 0 for task-analysis.", { exact: false }))
-    .toBeVisible();
-  await expect
-    .element(page.getByRole("link", { name: "Apri conversazione in T3" }))
-    .toHaveAttribute("href", expect.stringContaining(String(first.id)));
 });
 
 it("preserves a roadmap draft across unrelated revisions and resolves overlapping edits", async () => {
