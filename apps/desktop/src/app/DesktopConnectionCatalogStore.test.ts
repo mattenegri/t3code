@@ -28,9 +28,12 @@ const encodeLegacySavedEnvironments = Schema.encodeEffect(
     Schema.Struct({ version: Schema.Literal(1), records: Schema.Array(Schema.Unknown) }),
   ),
 );
-function layerSafeStorageFor(available: boolean, failDecrypt: Ref.Ref<boolean> | null = null) {
+function layerSafeStorageFor(
+  isEncryptionAvailable: Effect.Effect<boolean>,
+  failDecrypt: Ref.Ref<boolean> | null = null,
+) {
   return Layer.succeed(ElectronSafeStorage.ElectronSafeStorage, {
-    isEncryptionAvailable: Effect.succeed(available),
+    isEncryptionAvailable,
     encryptString: (value) => Effect.succeed(textEncoder.encode(`encrypted:${value}`)),
     decryptString: (value) => {
       return Effect.gen(function* () {
@@ -52,7 +55,7 @@ function layerSafeStorageFor(available: boolean, failDecrypt: Ref.Ref<boolean> |
 
 function layerFor(
   baseDir: string,
-  encryptionAvailable = true,
+  encryptionAvailable = Effect.succeed(true),
   failDecrypt: Ref.Ref<boolean> | null = null,
   fileSystemLayer: Layer.Layer<FileSystem.FileSystem> = NodeServices.layer,
 ) {
@@ -91,7 +94,7 @@ function layerFor(
 
 const withStore = <A, E, R>(
   effect: Effect.Effect<A, E, R | DesktopConnectionCatalogStore.DesktopConnectionCatalogStore>,
-  encryptionAvailable = true,
+  encryptionAvailable = Effect.succeed(true),
 ) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
@@ -114,15 +117,20 @@ describe("DesktopConnectionCatalogStore", () => {
     ),
   );
 
-  it.effect("does not persist when secure storage is unavailable", () =>
-    withStore(
-      Effect.gen(function* () {
-        const store = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore;
-        assert.isFalse(yield* store.set("{}"));
-        assert.deepStrictEqual(yield* store.get, Option.none());
-      }),
-      false,
-    ),
+  it.effect("skips secure storage on empty reads and refuses writes when unavailable", () =>
+    Effect.gen(function* () {
+      const checks = yield* Ref.make(0);
+      yield* withStore(
+        Effect.gen(function* () {
+          const store = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore;
+          assert.deepStrictEqual(yield* store.get, Option.none());
+          assert.equal(yield* Ref.get(checks), 0);
+          assert.isFalse(yield* store.set("{}"));
+          assert.equal(yield* Ref.get(checks), 1);
+        }),
+        Ref.update(checks, (count) => count + 1).pipe(Effect.as(false)),
+      );
+    }),
   );
 
   it.effect("migrates legacy relay, SSH, bearer profile, and credential data", () =>
@@ -273,7 +281,7 @@ describe("DesktopConnectionCatalogStore", () => {
         prefix: "t3-desktop-connection-catalog-test-",
       });
       const failDecrypt = yield* Ref.make(false);
-      const layer = layerFor(baseDir, true, failDecrypt);
+      const layer = layerFor(baseDir, Effect.succeed(true), failDecrypt);
       const store = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
         Effect.provide(layer),
       );

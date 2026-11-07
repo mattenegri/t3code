@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <clipPath id="tile"><rect width="128" height="128" rx="26"/></clipPath>
+  </defs>
+  <g clip-path="url(#tile)">
+    <rect width="128" height="128" fill="#080b12"/>
+    <path fill="#102345" d="M18 0h16v128H18zM56 0h16v128H56zM94 0h16v128H94z"/>
+  </g>
+  <g id="wordmark" transform="translate(-2 0)" fill="#469bff">
+    <path d="M10 46h31v8H30v28h-9V54H10z"/>
+    <path d="M45 46h29v7l-11 10c8 1 12 4 12 10 0 7-6 10-15 10-7 0-13-2-17-5l4-7c4 3 8 4 12 4s7-1 7-4-4-4-11-4h-3v-6l10-8H45z"/>
+    <path d="M79 56h8v3c2-3 5-4 8-4 4 0 7 2 9 5 2-3 5-5 9-5 7 0 10 4 10 12v15h-8V67c0-3-1-5-4-5s-5 2-5 6v14h-8V67c0-3-1-5-4-5s-5 2-5 6v14h-10z"/>
+  </g>
+</svg>
